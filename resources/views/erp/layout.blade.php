@@ -28,8 +28,11 @@
         @if($visible)
           <div class="side-group">{{ $group }}</div>
           @foreach($visible as [$r, $label, $icon])
+            @if(request()->routeIs($r) || request()->routeIs($r.'.*') || ($r === 'erp.shops' && request()->routeIs('erp.shop')) || ($r === 'erp.invoices' && request()->routeIs('erp.invoice')))
+              @php($pageIcon = $icon) @php($pageGroup = $group)
+            @endif
             @php($c = $navAlerts[$r] ?? null)
-            <a href="{{ route($r) }}" class="{{ request()->routeIs($r) || request()->routeIs($r.'.*') || ($r === 'erp.shops' && request()->routeIs('erp.shop')) || ($r === 'erp.invoices' && request()->routeIs('erp.invoice')) ? 'active' : '' }}"
+            <a href="{{ route($r) }}" class="grp-{{ Str::slug($group) }} {{ request()->routeIs($r) || request()->routeIs($r.'.*') || ($r === 'erp.shops' && request()->routeIs('erp.shop')) || ($r === 'erp.invoices' && request()->routeIs('erp.invoice')) ? 'active' : '' }}"
                @if(request()->routeIs($r)) aria-current="page" @endif>
               <x-icon :name="$icon"/><span>{{ $label }}</span>
               @if($c && $c['count'] > 0)<span class="count {{ $c['hot'] ? 'hot' : '' }}" title="{{ $c['title'] }}">{{ $c['count'] > 99 ? '99+' : $c['count'] }}</span>@endif
@@ -92,7 +95,7 @@
     <main class="content" id="main" tabindex="-1">
       <div class="page">
         <div class="page-head">
-          <div><h1>@yield('title', 'Dashboard')</h1>@hasSection('subtitle')<p class="sub">@yield('subtitle')</p>@endif</div>
+          <div class="d-flex align-items-center gap-3">@isset($pageIcon)<span class="ph-icon grp-{{ Str::slug($pageGroup) }}" aria-hidden="true"><x-icon :name="$pageIcon"/></span>@endisset<div><h1>@yield('title', 'Dashboard')</h1>@hasSection('subtitle')<p class="sub">@yield('subtitle')</p>@endif</div></div>
           @hasSection('actions')<div class="actions">@yield('actions')</div>@endif
         </div>
         @if(session('status') && session('next'))

@@ -512,6 +512,24 @@ a.alert-row:hover { background: var(--surface-2); text-decoration: none; color: 
 .auth-card h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 .25rem; }
 @media (max-width: 899.98px) { .auth-wrap { grid-template-columns: 1fr; } .auth-art { display: none; } }
 
+/* ---------- Section colours: sidebar icons + page header badge ---------- */
+.grp-overview { --g: #3b82f6; } .grp-inventory { --g: #8b5cf6; } .grp-sales { --g: #10b981; }
+.grp-field-team { --g: #f59e0b; } .grp-administration { --g: #f43f5e; } .grp-support { --g: #06b6d4; }
+.side-nav a[class*="grp-"] .ic { color: var(--g); opacity: .9; }
+.side-nav a.active[class*="grp-"] { box-shadow: inset 3px 0 0 var(--g); background: color-mix(in srgb, var(--g) 18%, transparent); }
+.ph-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; color: #fff;
+  background: linear-gradient(135deg, var(--g), color-mix(in srgb, var(--g) 70%, #000)); box-shadow: 0 6px 14px -6px var(--g); }
+.ph-icon .ic { width: 22px; height: 22px; }
+@media (max-width: 575.98px) { .ph-icon { width: 36px; height: 36px; } }
+
+/* ---------- Friendlier tables & panels (all pages) ---------- */
+.erp .table > thead > tr > th { background: color-mix(in srgb, var(--brand) 6%, var(--surface-2)); color: var(--text-2); }
+.erp .table > tbody > tr:nth-child(even):not(.subrow):not(.no-results) > * { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.erp .table-hover > tbody > tr:hover > * { background: var(--brand-soft) !important; }
+.panel-head h2::before { content: ""; display: inline-block; width: 4px; height: 14px; border-radius: 2px; background: var(--brand); margin-right: .55rem; vertical-align: -2px; }
+.toolbar { background: var(--surface-2); }
+.seg a.on { color: var(--brand-ink); }
+
 /* ---------- Colour-coded tiles (dashboard) ---------- */
 .stat.c-blue, .stat.c-green, .stat.c-amber, .stat.c-violet, .stat.c-rose, .stat.c-teal { border-top: 3px solid var(--c); background: linear-gradient(160deg, var(--c-soft) 0%, var(--surface) 70%); }
 .stat.c-blue { --c: #2563eb; --c-soft: #eaf2ff; }
