@@ -100,7 +100,6 @@
             <div class="flex-fill"><div>{{ session('status') }}</div>
               <div class="chip-row mt-2">@foreach((array) session('next') as [$nl, $nu])<a href="{{ $nu }}" class="btn btn-sm btn-light">{{ $nl }}<x-icon name="arrow-right" size="sm"/></a>@endforeach</div></div></div>
         @endif
-        @unless(request()->routeIs('erp.dashboard'))@includeIf('erp.partials.page-help')@endunless
         @if($errors->any() && ! old('_form'))
           <div class="alert alert-danger mb-3" role="alert"><x-icon name="alert" size="sm"/><div>@foreach($errors->all() as $e)<div>{{ $e }}</div>@endforeach</div></div>
         @endif
