@@ -26,7 +26,7 @@
       @foreach(\App\Support\AdminNav::groups() as $group => $items)
         @php($visible = array_filter($items, fn ($i) => ! $i[3] || $u->hasRole(...$i[3])))
         @if($visible)
-          <div class="side-group">{{ $group }}</div>
+          <div class="side-group grp-{{ Str::slug($group) }}">{{ $group }}</div>
           @foreach($visible as [$r, $label, $icon])
             @if(request()->routeIs($r) || request()->routeIs($r.'.*') || ($r === 'erp.shops' && request()->routeIs('erp.shop')) || ($r === 'erp.invoices' && request()->routeIs('erp.invoice')))
               @php($pageIcon = $icon) @php($pageGroup = $group)
@@ -92,7 +92,7 @@
       </div>
     </header>
 
-    <main class="content" id="main" tabindex="-1">
+    <main class="content {{ isset($pageGroup) ? 'grp-'.Str::slug($pageGroup) : 'grp-overview' }}" id="main" tabindex="-1">
       <div class="page">
         <div class="page-head">
           <div class="d-flex align-items-center gap-3">@isset($pageIcon)<span class="ph-icon grp-{{ Str::slug($pageGroup) }}" aria-hidden="true"><x-icon :name="$pageIcon"/></span>@endisset<div><h1>@yield('title', 'Dashboard')</h1>@hasSection('subtitle')<p class="sub">@yield('subtitle')</p>@endif</div></div>
