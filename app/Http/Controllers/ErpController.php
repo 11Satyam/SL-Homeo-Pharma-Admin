@@ -23,6 +23,7 @@ use App\Services\ExpenseService;
 use App\Services\TransferService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -374,14 +375,20 @@ class ErpController extends Controller
         $d = $r->validate([
             'name' => 'required|max:255', 'email' => 'required|email|unique:users,email',
             'role' => ['required', Rule::in($roles)], 'distributor_id' => 'nullable|exists:distributors,id',
-        ], ['email.unique' => 'Someone already signs in with this email address.']);
+            'login' => 'nullable|in:invite,password',
+            'password' => 'required_if:login,password|nullable|string|min:8|max:255|confirmed',
+        ], ['email.unique' => 'Someone already signs in with this email address.',
+            'password.required_if' => 'Enter a password, or choose “Email an activation link”.']);
         $did = $me->scopedDistributorId() ?? $d['distributor_id'] ?? null;
         if (in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) && ! $did) {
             $this->fail('distributor_id', 'Choose which distributor this '.Ui::label($d['role']).' works for.');
         }
-        $this->makeUser($d['name'], $d['email'], $d['role'], in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) ? $did : null);
+        $setNow = ($d['login'] ?? 'invite') === 'password';
+        $this->makeUser($d['name'], $d['email'], $d['role'], in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) ? $did : null, $setNow ? $d['password'] : null);
 
-        return $this->done("{$d['name']} added as ".Ui::label($d['role']).". An email was sent to {$d['email']} to set a password.",
+        return $this->done("{$d['name']} added as ".Ui::label($d['role']).'. '.($setNow
+            ? "They can sign in now with {$d['email']} and the password you set".($d['role'] === 'staff' ? ' — on the web panel and the mobile app.' : '.')
+            : "An email was sent to {$d['email']} to set a password."),
             $d['role'] === 'staff' ? [['Assign them an order', route('erp.orders', ['new' => 1])], ['Add another person', route('erp.users', ['new' => 1])]] : []);
     }
 
@@ -400,12 +407,27 @@ class ErpController extends Controller
         return $this->done($status === 'active' ? "{$user->name} can sign in again." : "{$user->name} is ".strtolower(Ui::label($status)).' and has been signed out everywhere, including the mobile app.');
     }
 
-    private function makeUser(string $name, string $email, string $role, ?int $distributorId): User
+    /** Admin/distributor sets a new password for someone in their scope; all their sessions and app tokens end. */
+    public function setUserPassword(Request $r, User $user)
     {
-        // Random unusable password; user sets their own via the activation (reset) link.
-        $u = User::create(['name' => $name, 'email' => $email, 'password' => Str::random(40), 'role' => $role, 'distributor_id' => $distributorId]);
-        Password::sendResetLink(['email' => $email]);
-        AuditLog::record('user.created', $u, ['role' => $role]);
+        $this->own($user->distributor_id);
+        abort_if($user->hasRole('admin') && ! $r->user()->hasRole('admin'), 403);
+        $pw = $r->validate(['password' => 'required|string|min:8|max:255|confirmed'])['password'];
+        $user->forceFill(['password' => Hash::make($pw), 'remember_token' => Str::random(60)])->save();
+        $user->tokens()->delete();
+        AuditLog::record('user.password_changed', $user, ['by' => $r->user()->id]);
+
+        return $this->done("Password changed for {$user->name}. They have been signed out of the web panel and mobile app, and must use the new password.");
+    }
+
+    /** $password null = random unusable password + activation email; otherwise the admin-chosen password (hashed by the model cast). */
+    private function makeUser(string $name, string $email, string $role, ?int $distributorId, ?string $password = null): User
+    {
+        $u = User::create(['name' => $name, 'email' => $email, 'password' => $password ?? Str::random(40), 'role' => $role, 'distributor_id' => $distributorId]);
+        if ($password === null) {
+            Password::sendResetLink(['email' => $email]);
+        }
+        AuditLog::record('user.created', $u, ['role' => $role, 'login' => $password === null ? 'invite' : 'password_set']);
 
         return $u;
     }
