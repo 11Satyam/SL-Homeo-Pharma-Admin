@@ -1,39 +1,55 @@
 @extends('erp.layout')
 @use('App\Support\Fmt')
 @section('title', 'Dashboard')
-@section('subtitle')
-  {{ $did ? 'Your distributor’s sales, receivables and stock at a glance.' : 'Company-wide sales, receivables, stock and field activity.' }} Updated {{ now()->format('d M Y, H:i') }}.
-@endsection
-@section('actions')
-  @if(auth()->user()->hasRole('admin', 'distributor', 'staff'))<a href="{{ route('erp.orders') }}#new-order" class="btn btn-primary"><x-icon name="plus" size="sm"/>New order</a>@endif
-  <a href="{{ route('erp.invoices') }}" class="btn btn-light"><x-icon name="file" size="sm"/>Receivables</a>
-@endsection
 @php
   $delta = $stats['salesPrev30'] > 0 ? round(($stats['sales30'] - $stats['salesPrev30']) / $stats['salesPrev30'] * 100, 1) : null;
   $stockTotal = max(1, array_sum($stock));
   $toneOf = ['confirmed' => '', 'packed' => '', 'out_for_delivery' => 'warn', 'delivered' => 'ok', 'partially_delivered' => 'warn', 'failed' => 'bad', 'cancelled' => ''];
 @endphp
 @section('content')
-@includeIf('erp.partials.todo')
+@php($me = auth()->user())
+@php($hour = (int) now()->setTimezone(\App\Support\BusinessDay::tz())->format('G'))
+<section class="hero-banner mb-3">
+  <div class="hb-text">
+    <div class="hb-date">{{ now()->setTimezone(\App\Support\BusinessDay::tz())->format('l, d F Y') }}</div>
+    <h2>{{ $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening') }}, {{ Str::before($me->name, ' ') }} 👋</h2>
+    <p>
+      @if($stats['openOrders'] || $stats['overdueCount'] || $stats['unverifiedCount'])
+        You have <b>{{ $stats['openOrders'] }}</b> open {{ Str::plural('order', $stats['openOrders']) }},
+        <b>{{ $stats['overdueCount'] }}</b> overdue {{ Str::plural('invoice', $stats['overdueCount']) }} and
+        <b>{{ $stats['unverifiedCount'] }}</b> {{ Str::plural('collection', $stats['unverifiedCount']) }} to verify.
+      @else
+        Everything is up to date. Here’s how the business is doing.
+      @endif
+    </p>
+  </div>
+  @if(class_exists(\App\Support\Guide::class))
+    <div class="hb-actions">
+      @foreach(array_slice(\App\Support\Guide::actions($me), 0, 4) as [$label, $url, $primary])
+        <a href="{{ $url }}" class="hb-btn {{ $primary ? 'primary' : '' }}">{{ $label }}<x-icon name="arrow-right" size="sm"/></a>
+      @endforeach
+    </div>
+  @endif
+</section>
 {{-- KPI row --}}
 <div class="row g-3 mb-3">
   <div class="col-sm-6 col-xl-3">
-    <x-erp.stat label="Sales · last 30 days" :value="Fmt::moneyShort($stats['sales30'])" icon="trend" :href="route('erp.invoices')">
+    <x-erp.stat label="Sales · last 30 days" class="c-blue" :value="Fmt::moneyShort($stats['sales30'])" icon="trend" :href="route('erp.invoices')">
       @if($delta !== null)<span class="{{ $delta >= 0 ? 'up' : 'down' }}"><x-icon :name="$delta >= 0 ? 'up' : 'down'" size="sm"/>{{ abs($delta) }}%</span> vs previous 30 days
       @else Invoiced on delivery @endif
     </x-erp.stat>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <x-erp.stat label="Outstanding receivables" :value="Fmt::moneyShort($stats['outstanding'])" icon="file" :tone="$stats['overdueCount'] ? 'bad' : ''" :href="route('erp.invoices')">
+    <x-erp.stat label="Outstanding receivables" class="c-amber" :value="Fmt::moneyShort($stats['outstanding'])" icon="file" :tone="$stats['overdueCount'] ? 'bad' : ''" :href="route('erp.invoices')">
       @if($stats['overdueCount'])<span class="down">{{ Fmt::moneyShort($stats['overdueAmount']) }}</span> overdue on {{ $stats['overdueCount'] }} {{ Str::plural('invoice', $stats['overdueCount']) }}@else Nothing overdue @endif
     </x-erp.stat>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <x-erp.stat label="Open orders" :value="Fmt::num($stats['openOrders'])" icon="cart" tone="violet" :href="route('erp.orders')"
+    <x-erp.stat label="Open orders" class="c-violet" :value="Fmt::num($stats['openOrders'])" icon="cart" tone="violet" :href="route('erp.orders')"
       :meta="$stats['ordersToday'].' placed today · '.Fmt::moneyShort($stats['salesToday']).' invoiced today'"/>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <x-erp.stat label="Collections · last 30 days" :value="Fmt::moneyShort($stats['collected30'])" icon="wallet" tone="ok" :href="route('erp.payments')">
+    <x-erp.stat label="Collections · last 30 days" class="c-green" :value="Fmt::moneyShort($stats['collected30'])" icon="wallet" tone="ok" :href="route('erp.payments')">
       @if($stats['unverifiedCount'])<span>{{ Fmt::moneyShort($stats['unverifiedAmount']) }} awaiting verification ({{ $stats['unverifiedCount'] }})</span>@else All collections verified @endif
     </x-erp.stat>
   </div>
@@ -77,10 +93,10 @@
 
 {{-- Operational strip --}}
 <div class="row g-3 mb-3">
-  <div class="col-6 col-lg-3"><x-erp.stat mini label="Field staff checked in" :value="$stats['checkedIn'].' / '.$stats['fieldStaff']" icon="pin" :href="auth()->user()->hasRole('admin','distributor','accounts_manager','viewer') ? route('erp.attendance') : null" meta="Today"/></div>
-  <div class="col-6 col-lg-3"><x-erp.stat mini label="Expenses to review" :value="$stats['expensesToReview']" icon="receipt" :tone="$stats['expensesToReview'] ? 'warn' : ''" :href="auth()->user()->hasRole('admin','distributor','accounts_manager','viewer') ? route('erp.expenses', ['status' => 'submitted']) : null" :meta="Fmt::money($stats['expensesToReviewAmount'], 0).' claimed'"/></div>
-  <div class="col-6 col-lg-3"><x-erp.stat mini label="Active shops" :value="Fmt::num($stats['shops'])" icon="store" :href="route('erp.shops')" :meta="$did ? 'In your territory' : 'Across '.$stats['distributors'].' distributors'"/></div>
-  <div class="col-6 col-lg-3"><x-erp.stat mini label="Active products" :value="Fmt::num($stats['products'])" icon="pill" :href="route('erp.products')" :meta="$lowStock->count() ? $lowStock->count().' below reorder level' : 'Stock levels healthy'"/></div>
+  <div class="col-6 col-lg-3"><x-erp.stat mini label="Field staff checked in" class="c-teal" :value="$stats['checkedIn'].' / '.$stats['fieldStaff']" icon="pin" :href="auth()->user()->hasRole('admin','distributor','accounts_manager','viewer') ? route('erp.attendance') : null" meta="Today"/></div>
+  <div class="col-6 col-lg-3"><x-erp.stat mini label="Expenses to review" class="c-rose" :value="$stats['expensesToReview']" icon="receipt" :tone="$stats['expensesToReview'] ? 'warn' : ''" :href="auth()->user()->hasRole('admin','distributor','accounts_manager','viewer') ? route('erp.expenses', ['status' => 'submitted']) : null" :meta="Fmt::money($stats['expensesToReviewAmount'], 0).' claimed'"/></div>
+  <div class="col-6 col-lg-3"><x-erp.stat mini label="Active shops" class="c-blue" :value="Fmt::num($stats['shops'])" icon="store" :href="route('erp.shops')" :meta="$did ? 'In your territory' : 'Across '.$stats['distributors'].' distributors'"/></div>
+  <div class="col-6 col-lg-3"><x-erp.stat mini label="Active products" class="c-violet" :value="Fmt::num($stats['products'])" icon="pill" :href="route('erp.products')" :meta="$lowStock->count() ? $lowStock->count().' below reorder level' : 'Stock levels healthy'"/></div>
 </div>
 
 {{-- Pipeline / aging / top products --}}
