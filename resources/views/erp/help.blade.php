@@ -91,7 +91,7 @@
 <section class="panel mt-3 help-item" id="support">
   <div class="panel-body d-flex gap-3 align-items-start">
     <x-icon name="info"/>
-    <div><b>Still stuck?</b> Every screen has a "How this page works" panel at the top. If something looks wrong, the red message on the screen says what to fix.
+    <div><b>Still stuck?</b> If something looks wrong, the red message on the screen says what to fix.
       @if($u->hasRole('admin', 'viewer')) The <a href="{{ route('erp.audit') }}">Audit Logs</a> shows who changed what and when.
       @else Contact your administrator @if($u->distributor) or {{ $u->distributor->business_name }} @endif and tell them the page name and the message you saw.@endif</div>
   </div>
