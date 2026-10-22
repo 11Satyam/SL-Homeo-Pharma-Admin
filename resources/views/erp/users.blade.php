@@ -1,0 +1,86 @@
+@extends('erp.layout')
+@use('App\Support\Fmt')
+@use('App\Support\Ui')
+@section('title', 'Users & Staff')
+@section('crumb')<span>Administration</span>@endsection
+@section('subtitle', 'People who can sign in. New users receive an activation email and set their own password.')
+@php($admin = auth()->user()->hasRole('admin'))
+@php($roles = $admin ? \App\Models\User::ROLES : ['staff'])
+@section('actions')
+  <button type="button" class="btn btn-primary" data-open="add-user"><x-icon name="plus" size="sm"/>Add user</button>
+@endsection
+@section('content')
+<section class="panel">
+  <div class="toolbar">
+    <div class="seg" id="role-seg">
+      <a href="#" class="on" data-role="">All <span class="n">{{ $users->count() }}</span></a>
+      @foreach($users->groupBy('role') as $r => $g)<a href="#" data-role="{{ Fmt::label($r) }}">{{ Fmt::label($r) }} <span class="n">{{ $g->count() }}</span></a>@endforeach
+    </div>
+    <div class="search-input grow"><x-icon name="search" size="sm"/><input class="form-control" placeholder="Search name or email…  ( / )" data-table-search="#users-table" aria-label="Search users"></div>
+  </div>
+  <div class="table-wrap"><table class="table table-hover" id="users-table">
+    <thead><tr><th data-sort>User</th><th data-sort>Role</th><th data-sort>Distributor</th><th>Joined</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    @foreach($users as $x)
+      <tr data-role="{{ Fmt::label($x->role) }}">
+        <td><span class="d-flex align-items-center gap-2"><span class="avatar" style="background: {{ Fmt::avatarColor($x->name) }}">{{ Fmt::initials($x->name) }}</span><span><span class="cell-main">{{ $x->name }}@if($x->id === auth()->id()) <span class="tag">You</span>@endif</span><span class="cell-sub">{{ $x->email }}</span></span></span></td>
+        <td><span class="tag" data-tip="{{ Fmt::label($x->role) }}|{{ Ui::ROLE_HELP[$x->role] ?? '' }}">{{ Fmt::label($x->role) }}</span></td>
+        <td>{{ $x->distributor?->business_name ?? '—' }}</td>
+        <td class="text-nowrap">{{ $x->created_at->format('d M Y') }}</td>
+        <td><x-erp.status :value="$x->status"/></td>
+        <td class="actions">@if($x->id !== auth()->id())
+          <form method="post" action="{{ route('erp.users.status', $x) }}" data-confirm="{{ $x->status === 'active' ? 'Suspend '.$x->name.'? They are signed out everywhere, including the mobile app.' : 'Re-activate '.$x->name.'?' }}" data-confirm-ok="{{ $x->status === 'active' ? 'Suspend' : 'Activate' }}" @if($x->status === 'active') data-tone="danger" @endif>@csrf
+            <input type="hidden" name="status" value="{{ $x->status === 'active' ? 'suspended' : 'active' }}">
+            <button class="btn btn-sm {{ $x->status === 'active' ? 'btn-outline-danger' : 'btn-outline-success' }}"><x-icon :name="$x->status === 'active' ? 'pause' : 'play'" size="sm"/>{{ $x->status === 'active' ? 'Suspend' : 'Activate' }}</button></form>
+        @endif</td>
+      </tr>
+    @endforeach
+    <tr class="no-results"><td colspan="6"><x-erp.empty icon="search" title="No users match"/></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<x-erp.modal id="add-user" title="Add user" subtitle="An activation link is emailed; you never see or set their password." :action="route('erp.users.store')" submit="Create & send invite">
+  <div class="row g-3">
+    <x-erp.field form="add-user" class="col-md-6" name="name" label="Full name" required maxlength="255"/>
+    <x-erp.field form="add-user" class="col-md-6" name="email" label="Email" type="email" required/>
+    <div class="col-12">
+      <span class="form-label d-block">Role<span class="req" aria-hidden="true">*</span></span>
+      <div class="gap-grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem">
+        @foreach($roles as $r)
+          <label class="qty-item" style="align-items:flex-start"><input class="form-check-input mt-1" type="radio" name="role" value="{{ $r }}" id="role-{{ $r }}" @checked((old('_form') === 'add-user' ? old('role') : null) === $r || (! old('role') && $r === 'staff')) required>
+            <span class="info"><b>{{ Fmt::label($r) }}</b><span style="white-space:normal">{{ Ui::ROLE_HELP[$r] ?? '' }}</span></span></label>
+        @endforeach
+      </div>
+      @if(old('_form') === 'add-user')@error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
+    </div>
+    @if($admin)
+      <input type="hidden" id="role-current" value="">
+      <x-erp.field form="add-user" class="col-12" name="distributor_id" label="Distributor" required id="au-dist" data-show-if="#role-current:{{ implode(',', Ui::DISTRIBUTOR_ROLES) }}">
+        <select id="au-dist" name="distributor_id" class="form-select"><option value="">Select distributor…</option>@foreach($distributors as $d)<option value="{{ $d->id }}" @selected(old('distributor_id') == $d->id)>{{ $d->business_name }}</option>@endforeach</select>
+      </x-erp.field>
+    @endif
+  </div>
+</x-erp.modal>
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Role filter chips (client-side).
+  document.querySelectorAll('#role-seg a').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      document.querySelectorAll('#role-seg a').forEach(function (x) { x.classList.toggle('on', x === a); });
+      document.querySelectorAll('#users-table tbody tr[data-role]').forEach(function (tr) { tr.hidden = a.dataset.role && tr.dataset.role !== a.dataset.role; });
+    });
+  });
+  // Mirror the chosen role into a hidden control so data-show-if can toggle the distributor field.
+  var cur = document.getElementById('role-current');
+  if (cur) {
+    var sync = function () { var r = document.querySelector('input[name=role]:checked'); cur.value = r ? r.value : ''; cur.dispatchEvent(new Event('change', { bubbles: true })); };
+    document.querySelectorAll('input[name=role]').forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+  }
+});
+</script>
+@endpush
+@endsection
