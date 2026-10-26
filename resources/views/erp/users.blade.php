@@ -23,12 +23,12 @@
     <tbody>
     @foreach($users as $x)
       <tr data-role="{{ Fmt::label($x->role) }}">
-        <td><span class="d-flex align-items-center gap-2"><span class="avatar" style="background: {{ Fmt::avatarColor($x->name) }}">{{ Fmt::initials($x->name) }}</span><span><span class="cell-main">{{ $x->name }}@if($x->id === auth()->id()) <span class="tag">You</span>@endif</span><span class="cell-sub">{{ $x->email }}</span></span></span></td>
+        <td><span class="d-flex align-items-center gap-2"><span class="avatar" style="background: {{ Fmt::avatarColor($x->name) }}">{{ Fmt::initials($x->name) }}</span><span><span class="cell-main">{{ $x->name }}@if($x->id === auth()->id()) <span class="tag">You</span>@endif</span><span class="cell-sub">{{ $x->email }}@if($x->phone) · {{ $x->phone }}@endif</span></span></span></td>
         <td><span class="tag" data-tip="{{ Fmt::label($x->role) }}|{{ Ui::ROLE_HELP[$x->role] ?? '' }}">{{ Fmt::label($x->role) }}</span>@if($x->role === 'staff')<span class="badge-s info ms-1"><span class="dot"></span>Mobile app</span>@endif</td>
         <td>{{ $x->distributor?->business_name ?? '—' }}</td>
         <td class="text-nowrap">{{ $x->created_at->format('d M Y') }}</td>
         <td><x-erp.status :value="$x->status"/></td>
-        <td class="actions"><div class="d-inline-flex gap-1">@if(! $x->hasRole('admin') || $admin)<button type="button" class="btn btn-sm btn-light" data-open="pw-{{ $x->id }}"><x-icon name="lock" size="sm"/>Change password</button>@endif
+        <td class="actions"><div class="d-inline-flex gap-1">@if(! $x->hasRole('admin') || $admin)<button type="button" class="btn btn-sm btn-light" data-open="ph-{{ $x->id }}"><x-icon name="user" size="sm"/>{{ $x->phone ? 'Mobile' : 'Set mobile' }}</button><button type="button" class="btn btn-sm btn-light" data-open="pw-{{ $x->id }}"><x-icon name="lock" size="sm"/>Change password</button>@endif
         @if($x->id !== auth()->id())
           <form method="post" action="{{ route('erp.users.status', $x) }}" data-confirm="{{ $x->status === 'active' ? 'Suspend '.$x->name.'? They are signed out everywhere, including the mobile app.' : 'Re-activate '.$x->name.'?' }}" data-confirm-ok="{{ $x->status === 'active' ? 'Suspend' : 'Activate' }}" @if($x->status === 'active') data-tone="danger" @endif>@csrf
             <input type="hidden" name="status" value="{{ $x->status === 'active' ? 'suspended' : 'active' }}">
@@ -45,6 +45,7 @@
   <div class="row g-3">
     <x-erp.field form="add-user" class="col-md-6" name="name" label="Full name" required maxlength="255"/>
     <x-erp.field form="add-user" class="col-md-6" name="email" label="Email" type="email" required/>
+    <x-erp.field form="add-user" class="col-md-6" name="phone" label="Mobile number" type="tel" maxlength="20" placeholder="98765 43210" help="Field staff sign in to the mobile app with this number + password"/>
     <div class="col-12">
       <span class="form-label d-block">Role<span class="req" aria-hidden="true">*</span></span>
       <div class="gap-grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem">
@@ -78,6 +79,9 @@
 
 @foreach($users as $x)
   @continue($x->hasRole('admin') && ! $admin)
+  <x-erp.modal :id="'ph-'.$x->id" :title="'Mobile login · '.$x->name" subtitle="The number this person types with their password on the mobile app. Leave blank to remove." :action="route('erp.users.phone', $x)" submit="Save mobile" size="narrow">
+    <x-erp.field :form="'ph-'.$x->id" name="phone" label="Mobile number" type="tel" maxlength="20" :value="$x->phone" placeholder="98765 43210"/>
+  </x-erp.modal>
   <x-erp.modal :id="'pw-'.$x->id" :title="'Change password · '.$x->name" :subtitle="$x->email.' — they will be signed out of the web panel and mobile app.'"
     :action="route('erp.users.password', $x)" submit="Change password" size="narrow">
     <div class="row g-3">

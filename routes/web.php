@@ -65,6 +65,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
         Route::post('/users', [E::class, 'saveUser'])->name('users.store');
         Route::post('/users/{user}/status', [E::class, 'setUserStatus'])->name('users.status');
         Route::post('/users/{user}/password', [E::class, 'setUserPassword'])->name('users.password');
+        Route::post('/users/{user}/phone', [E::class, 'setUserPhone'])->name('users.phone');
     });
     Route::middleware('role:inventory_manager')->group(function () {
         Route::post('/products', [E::class, 'saveProduct'])->name('products.store');

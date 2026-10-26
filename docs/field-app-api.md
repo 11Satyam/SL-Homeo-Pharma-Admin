@@ -40,9 +40,11 @@ Rate limits: login is limited to 5 failed attempts per email+IP (lockout shared 
 ## 2. Login
 
 ### `POST /auth/login`
+Sign in with **mobile number + password** (recommended for field staff). Admins create the user with a mobile number and password on Admin → Users & Staff.
 ```json
-{ "email": "ravi@example.com", "password": "secret-password", "device_name": "Redmi Note 13" }
+{ "mobile": "9876543210", "password": "secret-password", "device_name": "Redmi Note 13" }
 ```
+`mobile` accepts `9876543210`, `+91 98765 43210` or `09876543210`. Email login still works: send `"email"` instead of `"mobile"`. A wrong mobile or password returns 401 `"Invalid mobile number or password."`; a malformed number returns 422 on `mobile`. The response's `data.user` now includes `"mobile"`.
 ```json
 {
   "data": {
@@ -74,7 +76,7 @@ Exchanges a still-valid token for a new one; the old token stops working immedia
 Revokes the current token. `{ "message": "Logged out." }`
 
 ### `POST /auth/forgot-password`
-`{ "email": "..." }` sends the standard reset email. The user completes the reset on the web page `/reset-password/{token}`. The response is identical whether or not the account exists.
+`{ "mobile": "9876543210" }` (or `{ "email": "..." }`) sends the standard reset email to the account's registered email address. No SMS gateway is configured, so nothing is sent to the phone. The user completes the reset on the web page `/reset-password/{token}`. The response is identical whether or not the account exists.
 
 ## 3. Dashboard: `GET /dashboard`
 

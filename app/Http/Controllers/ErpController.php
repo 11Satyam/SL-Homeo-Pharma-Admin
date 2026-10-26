@@ -374,6 +374,7 @@ class ErpController extends Controller
         $roles = $me->hasRole('admin') ? User::ROLES : ['staff'];
         $d = $r->validate([
             'name' => 'required|max:255', 'email' => 'required|email|unique:users,email',
+            'phone' => 'nullable|string|max:20',
             'role' => ['required', Rule::in($roles)], 'distributor_id' => 'nullable|exists:distributors,id',
             'login' => 'nullable|in:invite,password',
             'password' => 'required_if:login,password|nullable|string|min:8|max:255|confirmed',
@@ -383,8 +384,18 @@ class ErpController extends Controller
         if (in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) && ! $did) {
             $this->fail('distributor_id', 'Choose which distributor this '.Ui::label($d['role']).' works for.');
         }
+        $phone = null;
+        if (filled($d['phone'] ?? null)) {
+            $phone = User::normalizePhone($d['phone']) ?? $this->fail('phone', 'Enter a valid 10-digit mobile number.');
+            if (User::where('phone', $phone)->exists()) {
+                $this->fail('phone', 'Someone already signs in with this mobile number.');
+            }
+        }
         $setNow = ($d['login'] ?? 'invite') === 'password';
-        $this->makeUser($d['name'], $d['email'], $d['role'], in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) ? $did : null, $setNow ? $d['password'] : null);
+        $u = $this->makeUser($d['name'], $d['email'], $d['role'], in_array($d['role'], Ui::DISTRIBUTOR_ROLES, true) ? $did : null, $setNow ? $d['password'] : null);
+        if ($phone) {
+            $u->update(['phone' => $phone]);
+        }
 
         return $this->done("{$d['name']} added as ".Ui::label($d['role']).'. '.($setNow
             ? "They can sign in now with {$d['email']} and the password you set".($d['role'] === 'staff' ? ' — on the web panel and the mobile app.' : '.')
@@ -405,6 +416,25 @@ class ErpController extends Controller
         AuditLog::record('user.'.$status, $user);
 
         return $this->done($status === 'active' ? "{$user->name} can sign in again." : "{$user->name} is ".strtolower(Ui::label($status)).' and has been signed out everywhere, including the mobile app.');
+    }
+
+    /** Set or clear the mobile number a user signs in with on the field app. */
+    public function setUserPhone(Request $r, User $user)
+    {
+        $this->own($user->distributor_id);
+        abort_if($user->hasRole('admin') && ! $r->user()->hasRole('admin'), 403);
+        $raw = $r->validate(['phone' => 'nullable|string|max:20'])['phone'] ?? null;
+        $phone = null;
+        if (filled($raw)) {
+            $phone = User::normalizePhone($raw) ?? $this->fail('phone', 'Enter a valid 10-digit mobile number.');
+            if (User::where('phone', $phone)->where('id', '!=', $user->id)->exists()) {
+                $this->fail('phone', 'Someone else already signs in with this mobile number.');
+            }
+        }
+        $user->update(['phone' => $phone]);
+        AuditLog::record('user.phone_changed', $user, ['by' => $r->user()->id]);
+
+        return $this->done($phone ? "{$user->name} can now sign in to the app with {$phone} and their password." : "Mobile number removed for {$user->name}.");
     }
 
     /** Admin/distributor sets a new password for someone in their scope; all their sessions and app tokens end. */

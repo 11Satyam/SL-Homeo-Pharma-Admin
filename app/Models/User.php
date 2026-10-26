@@ -22,6 +22,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
         'password',
         'role',
         'status',
@@ -31,6 +32,19 @@ class User extends Authenticatable
     protected $attributes = ['status' => 'active', 'role' => 'viewer'];
 
     public const ROLES = ['admin', 'inventory_manager', 'accounts_manager', 'distributor', 'staff', 'viewer'];
+
+    /** Indian mobile → 10 digits ("+91 98765-43210", "098765 43210" → "9876543210"); null if not a valid mobile. */
+    public static function normalizePhone(?string $raw): ?string
+    {
+        $d = preg_replace('/\D+/', '', (string) $raw);
+        if (strlen($d) === 12 && str_starts_with($d, '91')) {
+            $d = substr($d, 2);
+        } elseif (strlen($d) === 11 && str_starts_with($d, '0')) {
+            $d = substr($d, 1);
+        }
+
+        return preg_match('/^[6-9]\d{9}$/', $d) ? $d : null;
+    }
 
     public function distributor()
     {

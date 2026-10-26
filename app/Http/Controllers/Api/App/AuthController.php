@@ -25,12 +25,20 @@ class AuthController extends FieldController
 
     public function login(Request $request)
     {
+        // Sign in with mobile number + password (preferred for field staff) or email + password.
         $d = $request->validate([
-            'email' => 'required|email|max:255', 'password' => 'required|string|max:255',
+            'mobile' => 'required_without:email|nullable|string|max:20',
+            'email' => 'required_without:mobile|nullable|email|max:255',
+            'password' => 'required|string|max:255',
             'device_name' => 'nullable|string|max:100',
-        ]);
+        ], ['mobile.required_without' => 'Enter your mobile number.', 'email.required_without' => 'Enter your mobile number.']);
+        $phone = filled($d['mobile'] ?? null) ? User::normalizePhone($d['mobile']) : null;
+        if (filled($d['mobile'] ?? null) && ! $phone) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['mobile' => 'Enter a valid 10-digit mobile number.']);
+        }
+        $ident = $phone ?? Str::lower($d['email']);
         // Same limiter key as the web login, so attempts are counted across both.
-        $key = 'login:'.Str::lower($d['email']).'|'.$request->ip();
+        $key = 'login:'.$ident.'|'.$request->ip();
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $wait = RateLimiter::availableIn($key);
 
@@ -38,12 +46,12 @@ class AuthController extends FieldController
                 ->header('Retry-After', (string) $wait);
         }
 
-        $user = User::where('email', $d['email'])->first();
+        $user = $phone ? User::where('phone', $phone)->first() : User::where('email', $d['email'])->first();
         if (! $user || ! Hash::check($d['password'], $user->password)) {
             RateLimiter::hit($key, 60);
-            AuditLog::record('auth.app_failed', null, ['email' => $d['email']]);
+            AuditLog::record('auth.app_failed', null, $phone ? ['mobile' => $phone] : ['email' => $d['email']]);
 
-            return response()->json(['message' => 'Invalid email or password.', 'code' => 'invalid_credentials'], 401);
+            return response()->json(['message' => $phone ? 'Invalid mobile number or password.' : 'Invalid email or password.', 'code' => 'invalid_credentials'], 401);
         }
         RateLimiter::clear($key);
 
@@ -94,10 +102,26 @@ class AuthController extends FieldController
     /** Emails the standard reset link (completed on the web reset page). Response never reveals whether the account exists. */
     public function forgotPassword(Request $request)
     {
-        $request->validate(['email' => 'required|email|max:255']);
-        Password::sendResetLink($request->only('email'));
+        // Mobile number or email. With a mobile number the link goes to the account's registered email
+        // (no SMS gateway is configured). The reply is identical either way, so it never reveals whether an account exists.
+        $d = $request->validate([
+            'mobile' => 'required_without:email|nullable|string|max:20',
+            'email' => 'required_without:mobile|nullable|email|max:255',
+        ], ['mobile.required_without' => 'Enter your mobile number.', 'email.required_without' => 'Enter your mobile number.']);
+        if (filled($d['mobile'] ?? null)) {
+            $phone = User::normalizePhone($d['mobile']);
+            if (! $phone) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['mobile' => 'Enter a valid 10-digit mobile number.']);
+            }
+            $email = User::where('phone', $phone)->value('email');
+        } else {
+            $email = $d['email'];
+        }
+        if ($email) {
+            Password::sendResetLink(['email' => $email]);
+        }
 
-        return response()->json(['message' => 'If that account exists, a password reset link has been sent.']);
+        return response()->json(['message' => 'If that account exists, a password reset link has been sent to its registered email.']);
     }
 
     private function tokenPayload($token): array
@@ -110,7 +134,7 @@ class AuthController extends FieldController
         $dist = $u->distributor;
 
         return [
-            'user' => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'role' => $u->role, 'status' => $u->status],
+            'user' => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'mobile' => $u->phone, 'role' => $u->role, 'status' => $u->status],
             'distributor' => ['id' => $dist->id, 'name' => $dist->business_name, 'area' => $dist->area, 'phone' => $dist->phone, 'status' => $dist->status],
             'permissions' => self::PERMISSIONS,
             'config' => [
