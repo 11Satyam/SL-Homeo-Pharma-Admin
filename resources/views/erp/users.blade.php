@@ -3,9 +3,11 @@
 @use('App\Support\Ui')
 @section('title', 'Users & Staff')
 @section('crumb')<span>Administration</span>@endsection
-@section('subtitle', 'People who can sign in. New users receive an activation email and set their own password.')
-@php($admin = auth()->user()->hasRole('admin'))
-@php($roles = $admin ? \App\Models\User::ROLES : ['staff'])
+@section('subtitle', 'Everyone who can sign in to the web panel or the field staff mobile app. Add people, set their mobile login and reset passwords.')
+@php
+  $admin = auth()->user()->hasRole('admin');
+  $roles = $admin ? \App\Models\User::ROLES : ['staff'];
+@endphp
 @section('actions')
   <button type="button" class="btn btn-primary" data-open="add-user"><x-icon name="plus" size="sm"/>Add user</button>
 @endsection
@@ -41,37 +43,95 @@
   </table></div>
 </section>
 
-<x-erp.modal id="add-user" title="Add user" subtitle="Create a login for the web panel (and the mobile app for field staff)." :action="route('erp.users.store')" submit="Create user">
-  <div class="row g-3">
-    <x-erp.field form="add-user" class="col-md-6" name="name" label="Full name" required maxlength="255"/>
-    <x-erp.field form="add-user" class="col-md-6" name="email" label="Email" type="email" required/>
-    <x-erp.field form="add-user" class="col-md-6" name="phone" label="Mobile number" type="tel" maxlength="20" placeholder="98765 43210" help="Field staff sign in to the mobile app with this number + password"/>
-    <div class="col-12">
-      <span class="form-label d-block">Role<span class="req" aria-hidden="true">*</span></span>
-      <div class="gap-grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem">
-        @foreach($roles as $r)
-          <label class="qty-item" style="align-items:flex-start"><input class="form-check-input mt-1" type="radio" name="role" value="{{ $r }}" id="role-{{ $r }}" @checked((old('_form') === 'add-user' ? old('role') : null) === $r || (! old('role') && $r === 'staff')) required>
-            <span class="info"><b>{{ Fmt::label($r) }}</b><span style="white-space:normal">{{ Ui::ROLE_HELP[$r] ?? '' }}</span></span></label>
-        @endforeach
-      </div>
-      @if(old('_form') === 'add-user')@error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
+@php
+  $roleMeta = [
+      'admin' => ['shield', '#e11d48', ['Web panel', 'All distributors']],
+      'inventory_manager' => ['warehouse', '#7c3aed', ['Web panel', 'Stock & transfers']],
+      'accounts_manager' => ['wallet', '#059669', ['Web panel', 'Payments & expenses']],
+      'distributor' => ['building', '#d97706', ['Web panel', 'One distributor']],
+      'staff' => ['pin', '#2563eb', ['Mobile app', 'Web panel']],
+      'viewer' => ['eye', '#64748b', ['Web panel', 'Read-only']],
+  ];
+  $oldRole = old('_form') === 'add-user' ? old('role') : null;
+  $selRole = in_array($oldRole, $roles, true) ? $oldRole : (in_array('staff', $roles, true) ? 'staff' : $roles[0]);
+  $selLogin = old('_form') === 'add-user' ? old('login', 'password') : 'password';
+  $firstRole = '#role-'.$roles[0];
+@endphp
+<x-erp.modal id="add-user" title="Add user" subtitle="Create a sign-in for the web panel — and for the mobile app if they are field staff." :action="route('erp.users.store')" submit="Create user" size="wide">
+  {{-- Step 1: role --}}
+  <div class="step-block">
+    <div class="form-step"><span class="n">1</span><b>What will this person do?</b><span class="hint">Their role decides what they can see and change.</span></div>
+    <div class="choice-grid" role="radiogroup" aria-label="Role">
+      @foreach($roles as $r)
+        @php [$ic, $col, $tags] = $roleMeta[$r] ?? ['user', '#3b82f6', ['Web panel']]; @endphp
+        <label class="choice" style="--rc: {{ $col }}">
+          <input type="radio" name="role" value="{{ $r }}" id="role-{{ $r }}" @checked($selRole === $r) required>
+          <span class="card-in">
+            <span class="r-ic"><x-icon :name="$ic"/></span>
+            <span class="r-body"><b>{{ Fmt::label($r) }}</b><p>{{ Ui::ROLE_HELP[$r] ?? '' }}</p>
+              <span class="r-tags">@foreach($tags as $t)<span class="{{ $t === 'Mobile app' ? 'app' : '' }}">{{ $t }}</span>@endforeach</span></span>
+          </span>
+          <span class="tick"><x-icon name="check"/></span>
+        </label>
+      @endforeach
     </div>
+    @if(old('_form') === 'add-user')@error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
     @if($admin)
-      <input type="hidden" id="role-current" value="">
-      <x-erp.field form="add-user" class="col-12" name="distributor_id" label="Distributor" required id="au-dist" data-show-if="#role-current:{{ implode(',', Ui::DISTRIBUTOR_ROLES) }}">
-        <select id="au-dist" name="distributor_id" class="form-select"><option value="">Select distributor…</option>@foreach($distributors as $d)<option value="{{ $d->id }}" @selected(old('distributor_id') == $d->id)>{{ $d->business_name }}</option>@endforeach</select>
-      </x-erp.field>
+      <div class="row g-3 mt-1" data-show-if="{{ $firstRole }}:{{ implode(',', Ui::DISTRIBUTOR_ROLES) }}">
+        <x-erp.field form="add-user" class="col-md-7" name="distributor_id" label="Works for distributor" required id="au-dist" help="Distributors and field staff only see this distributor’s shops, orders and money.">
+          <select id="au-dist" name="distributor_id" class="form-select" required><option value="">Select distributor…</option>@foreach($distributors as $d)<option value="{{ $d->id }}" @selected(old('distributor_id') == $d->id)>{{ $d->business_name }}{{ $d->area ? ' · '.$d->area : '' }}</option>@endforeach</select>
+        </x-erp.field>
+      </div>
     @endif
-    <div class="col-12">
-      <span class="form-label d-block">Login</span>
-      <input type="hidden" name="login" value="invite">
-      <label class="qty-item" style="align-items:flex-start"><input class="form-check-input mt-1" type="checkbox" name="login" value="password" id="au-setpw" @checked(old('_form') === 'add-user' ? old('login') === 'password' : true)>
-        <span class="info"><b>Set email &amp; password now</b><span style="white-space:normal">They can sign in immediately with this email and password — field staff on the mobile app too. Untick to email them an activation link instead.</span></span></label>
+  </div>
+
+  {{-- Step 2: person --}}
+  <div class="step-block">
+    <div class="form-step"><span class="n">2</span><b>Who is it?</b></div>
+    <div class="row g-3">
+      <x-erp.field form="add-user" class="col-md-6" name="name" label="Full name" required maxlength="255" placeholder="e.g. Ravi Kumar" autocomplete="off"/>
+      <x-erp.field form="add-user" class="col-md-6" name="email" label="Email" type="email" required placeholder="name@company.com" autocomplete="off" help="Used for the web panel and password resets."/>
+      <x-erp.field form="add-user" class="col-md-6" name="phone" label="Mobile number" type="tel" id="au-phone" maxlength="20" placeholder="98765 43210" inputmode="numeric" autocomplete="off"
+        required :data-require-if="$firstRole.':staff'" help="Field staff sign in to the mobile app with this number + password."/>
     </div>
-    <div class="col-12" data-show-if="#au-setpw:checked">
-      <div class="row g-3">
-        <x-erp.field form="add-user" class="col-md-6" name="password" label="Password" type="password" required minlength="8" autocomplete="new-password" help="At least 8 characters"/>
-        <x-erp.field form="add-user" class="col-md-6" name="password_confirmation" label="Confirm password" type="password" required minlength="8" autocomplete="new-password"/>
+  </div>
+
+  {{-- Step 3: sign-in --}}
+  <div class="step-block">
+    <div class="form-step"><span class="n">3</span><b>How will they sign in?</b></div>
+    <div class="choice-grid two" role="radiogroup" aria-label="Sign-in method">
+      <label class="choice" style="--rc:#4f46e5">
+        <input type="radio" name="login" value="password" id="login-password" @checked($selLogin === 'password')>
+        <span class="card-in"><span class="r-ic"><x-icon name="lock"/></span>
+          <span class="r-body"><b>Set a password now</b><p>They can sign in straight away. You share the password with them.</p><span class="r-tags"><span>Recommended for field staff</span></span></span></span>
+        <span class="tick"><x-icon name="check"/></span>
+      </label>
+      <label class="choice" style="--rc:#0d9488">
+        <input type="radio" name="login" value="invite" @checked($selLogin === 'invite')>
+        <span class="card-in"><span class="r-ic"><x-icon name="mail"/></span>
+          <span class="r-body"><b>Email an invite</b><p>We email a secure link; they choose their own password.</p><span class="r-tags"><span>Needs a working email</span></span></span></span>
+        <span class="tick"><x-icon name="check"/></span>
+      </label>
+    </div>
+    <div class="row g-3 mt-1" data-show-if="#login-password:password">
+      <div class="col-md-6">
+        <label class="form-label" for="au-pw">Password<span class="req" aria-hidden="true">*</span></label>
+        <div class="input-group">
+          <input id="au-pw" name="password" type="password" class="form-control{{ old('_form') === 'add-user' && $errors->has('password') ? ' is-invalid' : '' }}" required minlength="8" maxlength="255" autocomplete="new-password" aria-describedby="au-pw-label">
+          <button type="button" class="btn btn-light" data-pw-toggle="#au-pw" title="Show / hide"><x-icon name="eye" size="sm"/></button>
+          <button type="button" class="btn btn-light" data-pw-generate title="Generate a strong password">Generate</button>
+        </div>
+        <div class="pw-meter" data-pw-meter="#au-pw" data-s="0"><i></i><i></i><i></i><i></i></div>
+        <div class="pw-label" id="au-pw-label" data-pw-label>At least 8 characters. Mix letters, numbers and a symbol.</div>
+        @if(old('_form') === 'add-user')@error('password')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="au-pw2">Confirm password<span class="req" aria-hidden="true">*</span></label>
+        <div class="input-group">
+          <input id="au-pw2" name="password_confirmation" type="password" class="form-control" required minlength="8" maxlength="255" autocomplete="new-password">
+          <button type="button" class="btn btn-light" data-pw-copy="#au-pw" title="Copy password to share"><x-icon name="file" size="sm"/>Copy</button>
+        </div>
+        <div class="pw-label" data-pw-match></div>
       </div>
     </div>
   </div>
@@ -101,13 +161,40 @@ document.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('#users-table tbody tr[data-role]').forEach(function (tr) { tr.hidden = a.dataset.role && tr.dataset.role !== a.dataset.role; });
     });
   });
-  // Mirror the chosen role into a hidden control so data-show-if can toggle the distributor field.
-  var cur = document.getElementById('role-current');
-  if (cur) {
-    var sync = function () { var r = document.querySelector('input[name=role]:checked'); cur.value = r ? r.value : ''; cur.dispatchEvent(new Event('change', { bubbles: true })); };
-    document.querySelectorAll('input[name=role]').forEach(function (r) { r.addEventListener('change', sync); });
-    sync();
-  }
+  // Password tools: show/hide, generate, copy, strength meter, match hint.
+  var pw = document.getElementById('au-pw'), pw2 = document.getElementById('au-pw2');
+  if (!pw) return;
+  var meter = document.querySelector('[data-pw-meter]'), label = document.querySelector('[data-pw-label]'), match = document.querySelector('[data-pw-match]');
+  var words = ['Too short', 'Weak', 'Fair', 'Good', 'Strong'];
+  var score = function (v) {
+    if (v.length < 8) return v.length ? 1 : 0;
+    var s = 1; if (/[a-z]/.test(v) && /[A-Z]/.test(v)) s++; if (/\d/.test(v)) s++; if (/[^A-Za-z0-9]/.test(v) || v.length >= 14) s++;
+    return Math.min(4, s);
+  };
+  var refresh = function () {
+    var s = score(pw.value); meter.dataset.s = s;
+    label.textContent = pw.value ? 'Strength: ' + words[s] + (pw.value.length < 8 ? ' — use at least 8 characters' : '') : 'At least 8 characters. Mix letters, numbers and a symbol.';
+    match.textContent = pw2.value ? (pw2.value === pw.value ? '✓ Passwords match' : '✗ Passwords do not match') : '';
+    match.style.color = pw2.value && pw2.value !== pw.value ? 'var(--bad)' : 'var(--ok)';
+    pw2.setCustomValidity(pw2.value && pw2.value !== pw.value ? 'Passwords do not match' : '');
+  };
+  pw.addEventListener('input', refresh); pw2.addEventListener('input', refresh);
+  document.querySelectorAll('[data-pw-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () { var t = pw.type === 'password' ? 'text' : 'password'; pw.type = t; pw2.type = t; });
+  });
+  document.querySelector('[data-pw-generate]').addEventListener('click', function () {
+    var a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', sym = '@#$%&*!', r = new Uint32Array(12), out = '';
+    crypto.getRandomValues(r);
+    for (var i = 0; i < 10; i++) out += a[r[i] % a.length];
+    out += sym[r[10] % sym.length] + (r[11] % 10);
+    pw.value = pw2.value = out; pw.type = pw2.type = 'text'; refresh();
+    window.erpToast && window.erpToast('Strong password generated — copy it to share with the user.');
+  });
+  document.querySelector('[data-pw-copy]').addEventListener('click', function () {
+    if (!pw.value) return;
+    (navigator.clipboard ? navigator.clipboard.writeText(pw.value) : Promise.reject()).then(function () { window.erpToast && window.erpToast('Password copied.'); }, function () { pw.type = 'text'; pw.select(); });
+  });
+  refresh();
 });
 </script>
 @endpush

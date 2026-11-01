@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\InsufficientStock;
 use App\Models\AuditLog;
 use App\Models\CreditNote;
 use App\Models\Invoice;
@@ -33,6 +34,7 @@ class SalesService
                 'staff_id' => $staffId, 'created_by' => auth()->id(), 'status' => 'confirmed',
             ] + array_intersect_key($extra, array_flip(['remarks', 'idempotency_key'])));
             $total = '0';
+            $short = [];
             foreach ($lines as $productId => $qty) {
                 if ((int) $qty <= 0) {
                     continue;
@@ -41,11 +43,17 @@ class SalesService
                 try {
                     $this->stock->reserve($loc, $p->id, (int) $qty); // throws if oversold
                 } catch (RuntimeException) {
-                    throw new RuntimeException("Insufficient available stock for {$p->name}.");
+                    // Keep checking the other lines so the user can fix them all in one go; the transaction rolls back.
+                    $short[] = ['product_id' => $p->id, 'product' => $p->name, 'ordered' => (int) $qty, 'available' => max(0, $this->stock->available($loc, $p->id))];
+
+                    continue;
                 }
                 // Price comes from the product master, never from the client.
                 $o->lines()->create(['product_id' => $p->id, 'qty' => (int) $qty, 'price' => $p->selling_price, 'tax_rate' => $p->tax_rate]);
                 $total = bcadd($total, $this->lineTotal($p->selling_price, $p->tax_rate, (int) $qty), 2);
+            }
+            if ($short) {
+                throw new InsufficientStock($short);
             }
             if (! $o->lines()->exists()) {
                 throw new RuntimeException('Add at least one product line.');

@@ -171,6 +171,34 @@ Same shape. Inactive or unknown products return 404.
 
 **Serial numbers and images:** the inventory is quantity-tracked, so every product has `"tracking": "quantity"` and no serial selection exists. Products have no image field yet.
 
+## 5b. Cart (build an order, then check out)
+
+One cart per **staff member per shop**, so a staff member can keep carts open for several shops. The cart stores only product and quantity: prices, GST and availability are recalculated live on every response, so totals are never stale. Stock is **not** reserved until checkout. Products have no variants: each pack size is its own product.
+
+| Method & path | Body / query | Does |
+|---|---|---|
+| `GET /cart?shop_id=1` | | Cart with live totals (empty cart if none) |
+| `GET /carts` | | Shops with an open cart |
+| `POST /cart/items` | `{ "shop_id": 1, "product_id": 5, "qty": 3 }` | Adds; if the product is already there, the quantities are **combined** |
+| `PATCH /cart/items/{productId}` | `{ "shop_id": 1, "qty": 7 }` | Sets the exact quantity; `0` removes the line |
+| `DELETE /cart/items/{productId}?shop_id=1` | | Removes one product |
+| `DELETE /cart?shop_id=1` | | Empties the cart |
+| `POST /cart/checkout` | `{ "shop_id": 1, "remarks": "…" }` + **`Idempotency-Key`** header | Places a confirmed order and empties the cart |
+
+Every cart call returns the same shape:
+```json
+{ "data": {
+  "shop": { "id": 1, "name": "Gupta Medicals" },
+  "items": [ { "product_id": 5, "name": "Gas Care Drop 30ml", "sku": "SLH-GAS-30", "unit": "bottle", "qty": 5,
+               "price": "175.00", "tax_rate": "5.00", "subtotal": "875.00", "tax": "43.75", "total": "918.75",
+               "available_qty": 20, "issue": null } ],
+  "line_count": 1, "unit_count": 5, "subtotal": "875.00", "discount_total": "0.00", "tax_total": "43.75", "total": "918.75",
+  "can_checkout": true, "issues": [], "updated_at": "2026-11-01T10:20:00+05:30" } }
+```
+- **`issue` per line:** `null`, `"insufficient_stock"` (stock dropped below the cart quantity since it was added) or `"inactive"` (the product was withdrawn). `can_checkout` is `false` while any issue exists; `issues[]` holds readable messages.
+- **422 errors:** `qty` (more than available or above 100,000), `product_id` (inactive, unknown or not in the cart), `shop_id` (not an active shop of your distributor), `cart` (empty, or contains a withdrawn product). At most 100 different products per cart.
+- **Checkout** goes through the same code as `POST /orders`: server prices, atomic stock reservation, and retry-safe with the same `Idempotency-Key`. It returns **201** with the order (same shape as `GET /orders/{id}`), or **200** + `Idempotent-Replayed: true` on a retry. If stock ran out meanwhile, it returns **422** `{"code":"insufficient_stock","shortages":[…]}` and **the cart is kept** so the user can lower quantities.
+
 ## 6. Attendance
 
 ### `GET /attendance/today`

@@ -120,7 +120,7 @@ class GuidedWorkflowTest extends TestCase
         $this->post('/erp/orders', $order)->assertSessionHasNoErrors()->assertSessionHas('status', fn ($s) => str_contains($s, 'set aside'));
         $this->post('/erp/orders', $order)->assertSessionHas('status', fn ($s) => str_contains($s, 'not created twice'));
         $this->assertSame(1, Order::count());
-        $this->post('/erp/orders', ['shop_id' => $shop->id, 'lines' => [$p->id => 999]])->assertSessionHasErrors(['action' => 'Insufficient available stock for Paracetamol 500.']);
+        $this->post('/erp/orders', ['shop_id' => $shop->id, 'lines' => [$p->id => 999]])->assertSessionHasErrors(['action' => 'Not enough stock for Paracetamol 500 (ordered 999, only 15 in stock). Lower the quantity or remove the item, or get more stock transferred to this distributor first.']);
         $this->post('/erp/orders', ['shop_id' => $shop->id, 'lines' => [$p->id => 0]])->assertSessionHasErrors('lines');
         $o = Order::sole();
         $this->assertSame('Deliver before noon', $o->remarks);

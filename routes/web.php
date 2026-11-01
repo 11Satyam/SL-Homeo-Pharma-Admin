@@ -61,6 +61,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     });
     Route::middleware('role:distributor')->group(function () {
         Route::post('/shops', [E::class, 'saveShop'])->name('shops.store');
+        Route::post('/shops/{shop}', [E::class, 'updateShop'])->name('shops.update');
         Route::get('/users', [E::class, 'users'])->name('users');
         Route::post('/users', [E::class, 'saveUser'])->name('users.store');
         Route::post('/users/{user}/status', [E::class, 'setUserStatus'])->name('users.status');
@@ -80,6 +81,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     Route::middleware('role:__admin_only')->group(function () {
         Route::get('/distributors', [E::class, 'distributors'])->name('distributors');
         Route::post('/distributors', [E::class, 'saveDistributor'])->name('distributors.store');
+        Route::post('/distributors/{distributor}', [E::class, 'updateDistributor'])->name('distributors.update');
         Route::post('/distributors/{distributor}/status', [E::class, 'setDistributorStatus'])->name('distributors.status');
         Route::post('/distributors/{distributor}/geofence', [E::class, 'setGeofence'])->name('distributors.geofence');
         Route::post('/ledger/{movement}/reverse', [E::class, 'reverseMovement'])->name('ledger.reverse');

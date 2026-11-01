@@ -32,7 +32,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
             return $request->is('api/*') || $request->expectsJson()
-                ? response()->json(['message' => $e->getMessage()], 422)
+                ? response()->json(['message' => $e->getMessage()] + ($e instanceof \App\Exceptions\InsufficientStock
+                    ? ['code' => 'insufficient_stock', 'shortages' => $e->shortages] : []), 422)
                 : back()->withInput()->withErrors(['action' => $e->getMessage()]);
         });
     })->create();

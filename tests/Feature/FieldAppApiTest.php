@@ -306,7 +306,8 @@ class FieldAppApiTest extends TestCase
         $this->placeOrder($t, [['product_id' => $inactive->id, 'qty' => 1]])->assertStatus(422)->assertJsonValidationErrors('items.0.product_id');
 
         $this->placeOrder($t, [['product_id' => $this->p2->id, 'qty' => 6]])
-            ->assertStatus(422)->assertJsonPath('message', 'Insufficient available stock for Cough Syrup.');
+            ->assertStatus(422)->assertJsonPath('code', 'insufficient_stock')
+            ->assertJsonPath('shortages.0', ['product_id' => $this->p2->id, 'product' => 'Cough Syrup', 'ordered' => 6, 'available' => 5]);
         $this->assertSame(0, Order::count(), 'failed order leaves no partial records');
         $this->assertSame(0, (int) $this->balance($this->p2)->reserved);
     }

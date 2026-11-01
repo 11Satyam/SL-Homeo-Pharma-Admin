@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\App\AttendanceController;
 use App\Http\Controllers\Api\App\AuthController;
+use App\Http\Controllers\Api\App\CartController;
 use App\Http\Controllers\Api\App\CatalogController;
 use App\Http\Controllers\Api\App\CollectionController;
 use App\Http\Controllers\Api\App\DashboardController;
@@ -36,7 +37,16 @@ Route::prefix('app')->group(function () {
 
         Route::get('/expenses', [ExpenseController::class, 'index']);
 
+        // Cart (one per shop). Item edits are frequent taps, so they use the normal limit; checkout is a write.
+        Route::get('/carts', [CartController::class, 'index']);
+        Route::get('/cart', [CartController::class, 'show']);
+        Route::delete('/cart', [CartController::class, 'clear']);
+        Route::post('/cart/items', [CartController::class, 'add']);
+        Route::patch('/cart/items/{product}', [CartController::class, 'update'])->whereNumber('product');
+        Route::delete('/cart/items/{product}', [CartController::class, 'remove'])->whereNumber('product');
+
         Route::middleware('throttle:app-write')->group(function () {
+            Route::post('/cart/checkout', [CartController::class, 'checkout']);
             Route::post('/orders', [OrderController::class, 'store']);
             Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
             Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);

@@ -326,6 +326,28 @@ class ErpController extends Controller
         return view('erp.distributors', ['distributors' => Distributor::withCount('shops')->with('users')->orderBy('business_name')->get()]);
     }
 
+    /** Edit a distributor's business details (admin). The owner's login is managed on Users & Staff. */
+    public function updateDistributor(Request $r, Distributor $distributor)
+    {
+        $d = $r->validate([
+            'business_name' => 'required|max:255', 'contact_person' => 'nullable|max:255', 'phone' => 'nullable|max:30',
+            'email' => 'nullable|email|max:255', 'area' => 'nullable|max:100', 'address' => 'nullable|max:500',
+            'credit_limit' => 'nullable|numeric|min:0',
+        ]);
+        if (Distributor::whereRaw('LOWER(business_name) = ?', [Str::lower(trim($d['business_name']))])->where('id', '!=', $distributor->id)->exists()) {
+            $this->fail('business_name', "Another distributor is already called \"{$d['business_name']}\".");
+        }
+        $before = $distributor->only(array_keys($d));
+        DB::transaction(function () use ($distributor, $d) {
+            $distributor->update($d + ['credit_limit' => $d['credit_limit'] ?? 0]);
+            // Keep the stock location's display name in step with the business name.
+            Location::where('type', 'distributor')->where('distributor_id', $distributor->id)->update(['name' => $distributor->business_name]);
+        });
+        AuditLog::record('distributor.updated', $distributor, ['before' => $before, 'after' => $distributor->only(array_keys($d))]);
+
+        return $this->done("Distributor \"{$distributor->business_name}\" updated.");
+    }
+
     public function saveDistributor(Request $r)
     {
         $d = $r->validate([
@@ -545,6 +567,37 @@ class ErpController extends Controller
             'distributors' => Distributor::where('status', 'active')->get()]);
     }
 
+    /** Edit a shop. Admin may move it to another distributor only while it has no orders, invoices or payments. */
+    public function updateShop(Request $r, Shop $shop)
+    {
+        $this->own($shop->distributor_id);
+        $d = $r->validate([
+            'name' => 'required|max:255', 'owner' => 'nullable|max:255', 'phone' => 'nullable|max:30', 'area' => 'nullable|max:100',
+            'address' => 'nullable|max:500', 'credit_limit' => 'nullable|numeric|min:0',
+            'payment_terms_days' => 'required|integer|min:0|max:365', 'status' => 'required|in:active,inactive',
+            'distributor_id' => 'nullable|exists:distributors,id',
+        ]);
+        $newDist = $r->user()->hasRole('admin') && ! empty($d['distributor_id']) ? (int) $d['distributor_id'] : $shop->distributor_id;
+        if ($newDist !== $shop->distributor_id) {
+            $history = Order::where('shop_id', $shop->id)->exists() || Invoice::where('shop_id', $shop->id)->exists() || Payment::where('shop_id', $shop->id)->exists();
+            if ($history) {
+                $this->fail('distributor_id', "{$shop->name} already has orders or payments with its current distributor, so it can't be moved — its invoices and balance belong to that distributor. Add it as a new shop under the other distributor instead.");
+            }
+        }
+        $dupe = Shop::where('distributor_id', $newDist)->where('id', '!=', $shop->id)
+            ->whereRaw('LOWER(name) = ?', [Str::lower(trim($d['name']))])
+            ->where(fn ($q) => isset($d['area']) ? $q->whereRaw('LOWER(area) = ?', [Str::lower($d['area'])]) : $q->whereNull('area'))->first();
+        if ($dupe) {
+            $this->fail('name', "Another shop \"{$dupe->name}\"".($dupe->area ? " in {$dupe->area}" : '').' already exists for this distributor.');
+        }
+        $fields = ['name', 'owner', 'phone', 'area', 'address', 'credit_limit', 'payment_terms_days', 'status'];
+        $before = $shop->only([...$fields, 'distributor_id']);
+        $shop->update(array_intersect_key($d, array_flip($fields)) + ['credit_limit' => $d['credit_limit'] ?? 0, 'distributor_id' => $newDist]);
+        AuditLog::record('shop.updated', $shop, ['before' => $before, 'after' => $shop->only([...$fields, 'distributor_id'])]);
+
+        return $this->done("Shop \"{$shop->name}\" updated.".(($before['payment_terms_days'] ?? null) != $shop->payment_terms_days ? ' New payment terms apply to future invoices.' : ''));
+    }
+
     public function saveShop(Request $r)
     {
         $d = $r->validate([
@@ -591,7 +644,13 @@ class ErpController extends Controller
         $q->when($f['status'] ?? null, fn ($q, $s) => $s === 'open' ? $q->whereIn('status', ['confirmed', 'packed', 'out_for_delivery']) : $q->where('status', $s))
             ->when($f['q'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('number', 'like', "%{$s}%")->orWhereHas('shop', fn ($sh) => $sh->where('name', 'like', "%{$s}%"))));
 
-        return view('erp.orders', ['orders' => $q->paginate(25)->withQueryString(), 'statusCounts' => $counts,
+        // Free stock (on hand minus reserved for open orders) per distributor, so the New order form can warn before submit.
+        $stock = $this->scoped(StockBalance::join('locations', 'locations.id', '=', 'stock_balances.location_id')->where('locations.type', 'distributor'), 'locations.distributor_id')
+            ->get(['locations.distributor_id', 'stock_balances.product_id', 'stock_balances.qty', 'stock_balances.reserved'])
+            ->groupBy('distributor_id')->map(fn ($g) => $g->mapWithKeys(fn ($b) => [$b->product_id => max(0, $b->qty - $b->reserved)]));
+
+        return view('erp.orders', ['orders' => $q->paginate(25)->withQueryString(), 'statusCounts' => $counts, 'stock' => $stock,
+            'stockLocations' => $this->scoped(Location::where('type', 'distributor'))->pluck('id', 'distributor_id'),
             'shops' => $this->scoped(Shop::where('status', 'active'))->get(),
             'products' => Product::where('active', true)->orderBy('name')->get(),
             'staff' => $this->scoped(User::where('role', 'staff')->where('status', 'active'))->get()]);

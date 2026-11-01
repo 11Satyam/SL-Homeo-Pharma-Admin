@@ -29,6 +29,7 @@
         <td class="actions">
           <details class="menu"><summary class="btn btn-sm btn-ghost" aria-label="Actions for {{ $d->business_name }}"><x-icon name="more"/></summary>
             <div class="menu-pop">
+              <button type="button" class="mi" data-open="edit-dist-{{ $d->id }}"><x-icon name="edit" size="sm"/>Edit details…</button>
               <button type="button" class="mi" data-open="geo-{{ $d->id }}"><x-icon name="pin" size="sm"/>Attendance geofence…</button>
               <a class="mi" href="{{ route('erp.shops') }}"><x-icon name="store" size="sm"/>View shops</a>
               <div class="sep"></div>
@@ -50,6 +51,7 @@
 </section>
 
 @foreach($distributors as $d)
+  @include('erp.partials.distributor-edit', ['d' => $d])
   <x-erp.modal :id="'geo-'.$d->id" :title="'Attendance geofence · '.$d->business_name" subtitle="Field staff check-ins are compared with this circle. Leave all fields blank to disable." :action="route('erp.distributors.geofence', $d)" submit="Save geofence">
     <div class="row g-3">
       <x-erp.field :form="'geo-'.$d->id" class="col-sm-4" name="latitude" label="Latitude" type="number" step="0.0000001" min="-90" max="90" :value="$d->latitude" placeholder="19.1197"/>

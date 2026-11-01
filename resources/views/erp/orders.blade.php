@@ -122,7 +122,7 @@
     <input type="hidden" name="key" value="{{ Str::uuid() }}">
     <div class="row g-3 mb-3">
       <x-erp.field form="new-order" class="col-md-{{ $u->hasRole('staff') ? '12' : '7' }}" name="shop_id" label="Shop" required id="no-shop">
-        <select id="no-shop" name="shop_id" class="form-select" required><option value="">Select shop…</option>@foreach($shops->sortBy('name') as $s)<option value="{{ $s->id }}" @selected((old('shop_id') ?? request('shop')) == $s->id)>{{ $s->name }}{{ $s->area ? ' · '.$s->area : '' }}</option>@endforeach</select>
+        <select id="no-shop" name="shop_id" class="form-select" required><option value="">Select shop…</option>@foreach($shops->sortBy('name') as $s)<option value="{{ $s->id }}" data-dist="{{ $s->distributor_id }}" @selected((old('shop_id') ?? request('shop')) == $s->id)>{{ $s->name }}{{ $s->area ? ' · '.$s->area : '' }}</option>@endforeach</select>
       </x-erp.field>
       @unless($u->hasRole('staff'))
         <x-erp.field form="new-order" class="col-md-5" name="staff_id" label="Delivery staff" id="no-staff">
@@ -134,10 +134,30 @@
       <div class="search-input" style="width:240px"><x-icon name="search" size="sm"/><input class="form-control form-control-sm" placeholder="Find product…" oninput="const q=this.value.toLowerCase();this.closest('.dlg-body').querySelectorAll('.qty-item').forEach(i=>i.hidden=!i.textContent.toLowerCase().includes(q))" aria-label="Find product"></div></div>
     <div class="qty-grid">
       @foreach($products as $p)
-        <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span>{{ Fmt::money($p->selling_price) }} + {{ (float) $p->tax_rate }}% · {{ $p->unit }}</span></span>
-          <input name="lines[{{ $p->id }}]" type="number" min="0" class="form-control form-control-sm" placeholder="0" data-price="{{ $p->selling_price }}" data-tax="{{ $p->tax_rate }}"
+        <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span>{{ Fmt::money($p->selling_price) }} + {{ (float) $p->tax_rate }}% · {{ $p->unit }}</span><span class="avail" data-avail></span></span>
+          <input name="lines[{{ $p->id }}]" type="number" min="0" class="form-control form-control-sm" placeholder="0" data-price="{{ $p->selling_price }}" data-tax="{{ $p->tax_rate }}" data-product="{{ $p->id }}" data-reorder="{{ $p->reorder_level }}"
             value="{{ old('_form') === 'new-order' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity"></label>
       @endforeach
+    </div>
+    <script type="application/json" data-order-stock>@json(['stock' => $stock, 'locations' => $stockLocations])</script>
+    <div class="callout mt-3" data-stock-pick><x-icon name="info" size="sm"/>Select the shop to see how much of each product is in stock at its distributor.</div>
+    <div class="alert alert-warning mt-3 mb-0" role="alert" data-stock-help hidden>
+      <x-icon name="alert" size="sm"/>
+      <div class="flex-grow-1">
+        <b>Not enough stock for this order</b>
+        <ul class="mb-2 mt-1 ps-3" data-stock-list></ul>
+        <div class="small fw-semibold">How to fix</div>
+        <ol class="small mb-2 ps-3">
+          <li>Lower each short quantity to what is in stock (button below). Take the rest as a new order once stock arrives.</li>
+          @if($u->hasRole('admin', 'inventory_manager'))
+            <li>Or send stock to this distributor first: <a href="{{ route('erp.transfers', ['new' => 1]) }}" data-stock-transfer>create a transfer</a> from the warehouse, then approve, dispatch and receive it.</li>
+          @else
+            <li>Or ask the company's inventory manager for a stock transfer. It appears under <a href="{{ route('erp.transfers') }}">Transfers</a>; once it is marked received, the stock can be ordered.</li>
+          @endif
+          <li>Stock set aside for other open orders is not free. Cancelling an old order that will not be delivered releases it.</li>
+        </ol>
+        <button type="button" class="btn btn-sm btn-outline-warning" data-stock-fit>Set short items to what is in stock</button>
+      </div>
     </div>
     <x-erp.field form="new-order" class="mt-3" name="remarks" label="Remarks (optional)" maxlength="500" placeholder="Delivery instructions, preferred time…"/>
     <div class="d-flex justify-content-between align-items-center mt-3 p-3" style="background:var(--surface-2);border-radius:10px;border:1px solid var(--border)">
