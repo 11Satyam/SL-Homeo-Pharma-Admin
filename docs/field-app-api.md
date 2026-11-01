@@ -175,17 +175,64 @@ Same shape. Inactive or unknown products return 404.
 
 One cart per **staff member per shop**, so a staff member can keep carts open for several shops. The cart stores only product and quantity: prices, GST and availability are recalculated live on every response, so totals are never stale. Stock is **not** reserved until checkout. Products have no variants: each pack size is its own product.
 
-| Method & path | Body / query | Does |
-|---|---|---|
-| `GET /cart?shop_id=1` | | Cart with live totals (empty cart if none) |
-| `GET /carts` | | Shops with an open cart |
-| `POST /cart/items` | `{ "shop_id": 1, "product_id": 5, "qty": 3 }` | Adds; if the product is already there, the quantities are **combined** |
-| `PATCH /cart/items/{productId}` | `{ "shop_id": 1, "qty": 7 }` | Sets the exact quantity; `0` removes the line |
-| `DELETE /cart/items/{productId}?shop_id=1` | | Removes one product |
-| `DELETE /cart?shop_id=1` | | Empties the cart |
-| `POST /cart/checkout` | `{ "shop_id": 1, "remarks": "…" }` + **`Idempotency-Key`** header | Places a confirmed order and empties the cart |
+**Base URL:** `https://slhomeopharma.com/api/app` · **Headers on every call:**
+```
+Authorization: Bearer <token from POST /auth/login>
+Accept: application/json
+Content-Type: application/json
+```
 
-Every cart call returns the same shape:
+| # | Method & path | Body / query | Does |
+|---|---|---|---|
+| 1 | `GET /cart?shop_id=1` | | Cart with live totals (empty cart if none) |
+| 2 | `GET /carts` | | Shops with an open cart |
+| 3 | `POST /cart/items` | `{ "shop_id": 1, "product_id": 5, "qty": 3 }` | **Add to cart.** If the product is already there, the quantities are **combined** |
+| 4 | `PATCH /cart/items/{productId}` | `{ "shop_id": 1, "qty": 7 }` | Sets the exact quantity; `0` removes the line |
+| 5 | `DELETE /cart/items/{productId}?shop_id=1` | | Removes one product |
+| 6 | `DELETE /cart?shop_id=1` | | Empties the cart |
+| 7 | `POST /cart/checkout` | `{ "shop_id": 1, "remarks": "…" }` + **`Idempotency-Key`** header | Places a confirmed order and empties the cart |
+
+### 1. Get cart: `GET /cart?shop_id=1`
+Returns the cart (shape below). If the shop has no cart yet, `items` is `[]` and every total is `"0.00"`.
+
+### 2. Open carts: `GET /carts`
+```json
+{ "data": [ { "shop": { "id": 1, "name": "Gupta Medicals" }, "line_count": 2, "updated_at": "2026-11-01T10:20:00+05:30" } ] }
+```
+
+### 3. Add to cart: `POST /cart/items`
+```json
+{ "shop_id": 1, "product_id": 5, "qty": 3 }
+```
+- **Same product again:** adding `qty: 2` after the call above leaves **one line with qty 5**, never a duplicate line.
+- **Validation:** `qty` must be 1–100,000, and the combined quantity can't exceed available stock. Error example: `"You already have 3 in the cart. Only 4 bottle of Gas Care Drop 30ml available."`
+
+### 4. Change quantity: `PATCH /cart/items/5`
+```json
+{ "shop_id": 1, "qty": 7 }
+```
+`qty: 0` removes the line. Returns 422 on `product_id` if the product isn't in the cart.
+
+### 5. Remove one product: `DELETE /cart/items/5?shop_id=1`
+Returns the updated cart. Returns 422 if the product wasn't in the cart.
+
+### 6. Clear cart: `DELETE /cart?shop_id=1`
+```json
+{ "data": { "shop": { "id": 1, "name": "Gupta Medicals" }, "items": [], "line_count": 0, "total": "0.00", "can_checkout": false, "...": "" }, "message": "Cart cleared." }
+```
+
+### 7. Checkout: `POST /cart/checkout`
+```
+Idempotency-Key: 7b1d0c1e-4f7a-4a0e-9a51-2a6f4b9d8c01
+```
+```json
+{ "shop_id": 1, "remarks": "Deliver before 11 AM" }
+```
+- **201** returns the created order (same shape as `GET /orders/{id}`, `status: "confirmed"`), and the cart is emptied.
+- **Retry with the same key:** **200**, the same order, header `Idempotent-Replayed: true`. No duplicate order.
+- **Stock changed since adding:** **422** `{"code":"insufficient_stock","shortages":[{"product_id":5,"product":"…","ordered":5,"available":2}]}`. The order isn't created and the cart is kept.
+
+### Cart response (calls 1, 3, 4, 5, 6)
 ```json
 { "data": {
   "shop": { "id": 1, "name": "Gupta Medicals" },
@@ -196,7 +243,19 @@ Every cart call returns the same shape:
   "can_checkout": true, "issues": [], "updated_at": "2026-11-01T10:20:00+05:30" } }
 ```
 - **`issue` per line:** `null`, `"insufficient_stock"` (stock dropped below the cart quantity since it was added) or `"inactive"` (the product was withdrawn). `can_checkout` is `false` while any issue exists; `issues[]` holds readable messages.
-- **422 errors:** `qty` (more than available or above 100,000), `product_id` (inactive, unknown or not in the cart), `shop_id` (not an active shop of your distributor), `cart` (empty, or contains a withdrawn product). At most 100 different products per cart.
+- **Errors:**
+
+  | Code | Field | When |
+  |---|---|---|
+  | 401 | — | Missing, invalid or expired token |
+  | 422 | `qty` | More than available stock, below 1 (add) / 0 (update), or above 100,000 |
+  | 422 | `product_id` | Inactive, unknown, or not in the cart; or more than 100 different products |
+  | 422 | `shop_id` | Not an active shop of your distributor |
+  | 422 | `cart` | Checkout with an empty cart, or one that contains a withdrawn product |
+  | 422 | `idempotency_key` | Checkout without an `Idempotency-Key` header |
+  | 429 | — | Too many requests (`Retry-After` header) |
+
+- **Privacy:** each staff member sees only their own carts.
 - **Checkout** goes through the same code as `POST /orders`: server prices, atomic stock reservation, and retry-safe with the same `Idempotency-Key`. It returns **201** with the order (same shape as `GET /orders/{id}`), or **200** + `Idempotent-Replayed: true` on a retry. If stock ran out meanwhile, it returns **422** `{"code":"insufficient_stock","shortages":[…]}` and **the cart is kept** so the user can lower quantities.
 
 ## 6. Attendance
