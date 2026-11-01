@@ -103,44 +103,144 @@
   /* ---------- Live order total (inputs with data-price / data-tax) ---------- */
   $$('[data-order-total]').forEach(function (out) {
     var scope = out.closest('form'), fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+    var set = function (sel, v) { var el = $(sel, scope); if (el) el.textContent = v; };
     var calc = function () {
-      var sum = 0, items = 0;
-      $$('input[data-price]', scope).forEach(function (i) { var q = parseInt(i.value, 10) || 0; if (q > 0) { items++; sum += q * parseFloat(i.dataset.price) * (1 + parseFloat(i.dataset.tax || 0) / 100); } });
-      out.textContent = fmt.format(sum); var c = $('[data-order-count]', scope); if (c) c.textContent = items + (items === 1 ? ' product' : ' products');
+      var sub = 0, gst = 0, items = 0, units = 0;
+      $$('input[data-price]', scope).forEach(function (i) {
+        var q = parseInt(i.value, 10) || 0, net = q * parseFloat(i.dataset.price), tax = net * parseFloat(i.dataset.tax || 0) / 100;
+        var lt = i.closest('.qty-item') && $('[data-line-total]', i.closest('.qty-item'));
+        if (lt) lt.textContent = q > 0 ? '= ' + fmt.format(net + tax) : '';
+        if (q > 0) { items++; units += q; sub += net; gst += tax; }
+      });
+      out.textContent = fmt.format(sub + gst); set('[data-order-sub]', fmt.format(sub)); set('[data-order-gst]', fmt.format(gst));
+      set('[data-order-count]', items + (items === 1 ? ' product' : ' products')); set('[data-order-units]', units ? units + (units === 1 ? ' unit' : ' units') : '');
     };
     scope.addEventListener('input', calc); calc();
   });
 
-  /* ---------- New order: free stock per product at the chosen shop's distributor ---------- */
+  /* ---------- New order: live free stock at the chosen shop's distributor + product filters ---------- */
   $$('[data-order-stock]').forEach(function (el) {
-    var data = JSON.parse(el.textContent), form = el.closest('form'), shop = $('select[name="shop_id"]', form);
+    var data = JSON.parse(el.textContent), url = el.getAttribute('data-url'), form = el.closest('form'), dlg = form.closest('dialog');
+    var shop = $('select[name="shop_id"]', form), submit = $('button[type=submit]', form);
     var help = $('[data-stock-help]', form), list = $('[data-stock-list]', form), pick = $('[data-stock-pick]', form), link = $('[data-stock-transfer]', form);
+    var live = $('[data-stock-live]', form), liveAt = $('[data-stock-at]', form), block = $('[data-order-block]', form);
+    var grid = $('.qty-grid', form), none = $('[data-qty-none]', form);
     var inputs = $$('input[data-product]', form), base = link && link.getAttribute('href');
-    var free = function () { var o = shop && shop.selectedOptions[0], dist = o && o.dataset.dist; return dist ? (data.stock[dist] || {}) : null; };
+    var fq = $('[data-f-q]', form), fcat = $('[data-f-cat]', form), fgst = $('[data-f-gst]', form), fsort = $('[data-f-sort]', form);
+    var chips = $$('[data-chip]', form), chip = '', fetchedAt = 0, busy = null;
+    var dist = function () { var o = shop && shop.selectedOptions[0]; return o && o.dataset.dist; };
+    var free = function () { var k = dist(); return k ? (data.stock[k] || {}) : null; };
+    var qty = function (i) { return parseInt(i.value, 10) || 0; };
+    var stamp = function (t, err) {
+      if (!live) return;
+      live.hidden = !dist(); live.classList.toggle('busy', !!busy); live.classList.toggle('err', !!err);
+      var hm = t ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+      liveAt.textContent = busy ? 'Checking stock…' : err ? 'Could not refresh stock, showing figures from ' + hm : 'Live stock · updated ' + hm;
+    };
+
+    // Status per product: free qty, ordered qty, and which stock bucket it falls in.
+    var status = function (i, map) {
+      var a = map ? (map[i.dataset.product] || 0) : null, q = qty(i);
+      return { a: a, q: q, short: map ? q > a : false, kind: !map ? '' : a <= 0 ? 'out' : a <= (parseInt(i.dataset.reorder, 10) || 0) ? 'low' : 'in' };
+    };
     var update = function () {
       var map = free(), short = [];
       if (pick) pick.hidden = !!map;
       inputs.forEach(function (i) {
-        var item = i.closest('.qty-item'), tag = $('[data-avail]', item), q = parseInt(i.value, 10) || 0;
-        if (!map) { tag.textContent = ''; tag.className = 'avail'; item.classList.remove('short'); i.setCustomValidity(''); return; }
-        var a = map[i.dataset.product] || 0, over = q > a;
-        tag.textContent = a > 0 ? a + ' in stock' : 'Out of stock';
-        tag.className = 'avail ' + (a <= 0 ? 'bad' : (a <= (parseInt(i.dataset.reorder, 10) || 0) ? 'warn' : 'ok'));
-        item.classList.toggle('short', over);
-        i.setCustomValidity(over ? (a > 0 ? 'Only ' + a + ' in stock. Lower the quantity.' : 'Out of stock. Clear this quantity or get stock transferred first.') : '');
-        if (over) short.push({ name: $('b', item).textContent, q: q, a: a });
+        var item = i.closest('.qty-item'), tag = $('[data-avail]', item), meter = $('[data-meter]', item), s = status(i, map);
+        item.classList.toggle('picked', s.q > 0);
+        if (!map) { tag.textContent = ''; tag.className = 'avail'; item.classList.remove('short', 'none'); meter.hidden = true; i.removeAttribute('max'); i.setCustomValidity(''); return; }
+        tag.textContent = s.a > 0 ? s.a + ' in stock' + (s.q > 0 && !s.short ? ' · ' + (s.a - s.q) + ' left after this order' : '') : 'Out of stock';
+        tag.className = 'avail ' + (s.kind === 'out' ? 'bad' : s.kind === 'low' ? 'warn' : 'ok');
+        meter.hidden = !(s.q > 0 && s.a > 0); meter.className = 'meter ' + (s.short ? 'bad' : s.q / s.a > .8 ? 'warn' : '');
+        $('i', meter).style.width = Math.min(100, s.a ? s.q / s.a * 100 : 0) + '%';
+        item.classList.toggle('short', s.short); item.classList.toggle('none', s.a <= 0);
+        i.max = s.a;
+        i.setCustomValidity(s.short ? (s.a > 0 ? 'Only ' + s.a + ' in stock. Lower the quantity.' : 'Out of stock. Clear this quantity or get stock transferred first.') : '');
+        if (s.short) short.push({ name: $('b', item).textContent, q: s.q, a: s.a });
       });
       list.textContent = '';
       short.forEach(function (s) { var li = d.createElement('li'); li.textContent = s.name + ': ordered ' + s.q + ', ' + (s.a > 0 ? 'only ' + s.a + ' in stock' : 'none in stock'); list.appendChild(li); });
       help.hidden = !short.length;
-      if (link) { var loc = shop.selectedOptions[0] && data.locations[shop.selectedOptions[0].dataset.dist]; link.href = base + (loc ? '&to=' + loc : ''); }
+      if (block) { block.hidden = !short.length; $('span', block).textContent = short.length + (short.length === 1 ? ' product is' : ' products are') + ' over the stock available. Fix ' + (short.length === 1 ? 'it' : 'them') + ' to confirm the order.'; }
+      if (submit) submit.disabled = short.length > 0;
+      if (link) { var loc = data.locations[dist()]; link.href = base + (loc ? '&to=' + loc : ''); }
+      counts(map);
+    };
+
+    // Filters: text, category and GST narrow the list; chips pick a stock bucket; sort reorders the grid.
+    var matches = function (i) {
+      var item = i.closest('.qty-item'), q = fq ? fq.value.trim().toLowerCase() : '';
+      return (!q || item.dataset.search.indexOf(q) > -1) && (!fcat || !fcat.value || item.dataset.cat === fcat.value) && (!fgst || !fgst.value || item.dataset.gst === fgst.value);
+    };
+    var inChip = function (s, k) { return !k || (k === 'picked' ? s.q > 0 : k === 'short' ? s.short : s.kind === k); };
+    var counts = function (map) {
+      chips.forEach(function (c) {
+        var k = c.dataset.chip, n = 0;
+        inputs.forEach(function (i) { if (matches(i) && inChip(status(i, map), k)) n++; });
+        $('[data-chip-n]', c).textContent = (k === 'short' && !n) ? '' : n;
+        c.disabled = c.hasAttribute('data-needs-shop') && !map;
+      });
+    };
+    var filter = function () {
+      var map = free(), shown = 0, sort = fsort ? fsort.value : 'name';
+      if (!map && (chip === 'in' || chip === 'low' || chip === 'out')) setChip('');
+      var rows = inputs.map(function (i) { return { i: i, item: i.closest('.qty-item'), s: status(i, map) }; });
+      rows.forEach(function (r) { var on = matches(r.i) && inChip(r.s, chip); r.item.hidden = !on; if (on) shown++; });
+      rows.sort(function (x, y) {
+        var p = parseFloat(x.i.dataset.price) - parseFloat(y.i.dataset.price), a = (x.s.a || 0) - (y.s.a || 0);
+        var v = sort === 'price' ? p : sort === '-price' ? -p : sort === 'stock' ? -a : sort === 'low' ? a : 0;
+        return v || (x.item.dataset.name < y.item.dataset.name ? -1 : 1);
+      }).forEach(function (r) { grid.appendChild(r.item); });
+      grid.appendChild(none); none.hidden = shown > 0;
+      var dirty = chip || (fq && fq.value) || (fcat && fcat.value) || (fgst && fgst.value) || (fsort && fsort.value !== 'name');
+      $$('[data-f-reset]', form).forEach(function (b) { if (!b.closest('[data-qty-none]')) b.hidden = !dirty; });
+      counts(map);
+    };
+    var setChip = function (k) { chip = k; chips.forEach(function (c) { var on = c.dataset.chip === k; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); };
+    chips.forEach(function (c) { c.addEventListener('click', function () { setChip(chip === c.dataset.chip ? '' : c.dataset.chip); filter(); }); });
+    [fq, fcat, fgst, fsort].forEach(function (f) { if (f) f.addEventListener(f.tagName === 'SELECT' ? 'change' : 'input', function (e) { e.stopPropagation(); filter(); }); });
+    $$('[data-f-reset]', form).forEach(function (b) { b.addEventListener('click', function () { if (fq) fq.value = ''; if (fcat) fcat.value = ''; if (fgst) fgst.value = ''; if (fsort) fsort.value = 'name'; setChip(''); filter(); }); });
+    if (fq) fq.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+
+    // Live refresh from the server: on shop change, when the dialog opens, every 15s while open, and right before submit.
+    var load = function () {
+      var o = shop && shop.selectedOptions[0], k = dist();
+      if (!url || !k || !window.fetch) return Promise.resolve(false);
+      if (busy) return busy;
+      stamp(fetchedAt);
+      busy = fetch(url + '?shop=' + encodeURIComponent(o.value), { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (res) {
+          var old = data.stock[res.distributor_id] || {};
+          data.stock[res.distributor_id] = res.stock || {};
+          if (String(res.distributor_id) === dist()) inputs.forEach(function (i) {
+            var p = i.dataset.product, was = old[p] || 0, now = res.stock[p] || 0, item = i.closest('.qty-item');
+            if (fetchedAt && was !== now) { item.classList.remove('changed'); void item.offsetWidth; item.classList.add('changed'); }
+          });
+          fetchedAt = Date.parse(res.at) || Date.now(); busy = null; update(); filter(); stamp(fetchedAt); return true;
+        })
+        .catch(function () { busy = null; stamp(fetchedAt || Date.parse(data.at), true); return false; });
+      return busy;
     };
     $('[data-stock-fit]', form).addEventListener('click', function () {
       var map = free(); if (!map) return;
-      inputs.forEach(function (i) { var a = map[i.dataset.product] || 0; if ((parseInt(i.value, 10) || 0) > a) i.value = a > 0 ? a : ''; });
+      inputs.forEach(function (i) { var a = map[i.dataset.product] || 0; if (qty(i) > a) i.value = a > 0 ? a : ''; });
       form.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    form.addEventListener('input', update); if (shop) shop.addEventListener('change', update); update();
+    var refresh = $('[data-stock-refresh]', form); if (refresh) refresh.addEventListener('click', load);
+    form.addEventListener('input', update);
+    if (shop) shop.addEventListener('change', function () { fetchedAt = 0; update(); filter(); stamp(Date.parse(data.at)); load(); });
+    // Re-check against the latest stock before the order is sent; stale figures could let a short order through.
+    form.addEventListener('submit', function (e) {
+      if (form.__stockChecked || !dist() || Date.now() - fetchedAt < 5000) { form.__stockChecked = false; return; }
+      e.preventDefault();
+      load().then(function () { update(); if (submit && submit.disabled) { var s = $('.qty-item.short', form); if (s) s.scrollIntoView({ block: 'nearest' }); return; } form.__stockChecked = true; submitWith(form, e.submitter); });
+    });
+    if (dlg && window.MutationObserver) new MutationObserver(function () { if (dlg.open) load(); }).observe(dlg, { attributes: true, attributeFilter: ['open'] });
+    setInterval(function () { if ((!dlg || dlg.open) && !d.hidden) load(); }, 15000);
+    d.addEventListener('visibilitychange', function () { if (!d.hidden && (!dlg || dlg.open)) load(); });
+    update(); filter(); stamp(Date.parse(data.at));
   });
 
   /* ---------- Confirmation dialog (replaces window.confirm) ---------- */

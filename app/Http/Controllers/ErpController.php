@@ -644,16 +644,31 @@ class ErpController extends Controller
         $q->when($f['status'] ?? null, fn ($q, $s) => $s === 'open' ? $q->whereIn('status', ['confirmed', 'packed', 'out_for_delivery']) : $q->where('status', $s))
             ->when($f['q'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('number', 'like', "%{$s}%")->orWhereHas('shop', fn ($sh) => $sh->where('name', 'like', "%{$s}%"))));
 
-        // Free stock (on hand minus reserved for open orders) per distributor, so the New order form can warn before submit.
-        $stock = $this->scoped(StockBalance::join('locations', 'locations.id', '=', 'stock_balances.location_id')->where('locations.type', 'distributor'), 'locations.distributor_id')
-            ->get(['locations.distributor_id', 'stock_balances.product_id', 'stock_balances.qty', 'stock_balances.reserved'])
-            ->groupBy('distributor_id')->map(fn ($g) => $g->mapWithKeys(fn ($b) => [$b->product_id => max(0, $b->qty - $b->reserved)]));
-
-        return view('erp.orders', ['orders' => $q->paginate(25)->withQueryString(), 'statusCounts' => $counts, 'stock' => $stock,
+        return view('erp.orders', ['orders' => $q->paginate(25)->withQueryString(), 'statusCounts' => $counts, 'stock' => $this->freeStock(),
             'stockLocations' => $this->scoped(Location::where('type', 'distributor'))->pluck('id', 'distributor_id'),
             'shops' => $this->scoped(Shop::where('status', 'active'))->get(),
             'products' => Product::where('active', true)->orderBy('name')->get(),
             'staff' => $this->scoped(User::where('role', 'staff')->where('status', 'active'))->get()]);
+    }
+
+    /** Live free stock at a shop's distributor, polled by the New order form so availability stays current while it is open. */
+    public function orderStock(Request $r)
+    {
+        $shop = Shop::findOrFail($r->validate(['shop' => 'required|integer'])['shop']);
+        $this->own($shop->distributor_id);
+
+        return response()->json(['distributor_id' => $shop->distributor_id,
+            'stock' => (object) ($this->freeStock($shop->distributor_id)->get($shop->distributor_id)?->all() ?? []),
+            'at' => now()->toIso8601String()]);
+    }
+
+    /** Free stock (on hand minus reserved for open orders) per distributor and product. */
+    private function freeStock(?int $distributorId = null)
+    {
+        return $this->scoped(StockBalance::join('locations', 'locations.id', '=', 'stock_balances.location_id')->where('locations.type', 'distributor'), 'locations.distributor_id')
+            ->when($distributorId, fn ($q, $id) => $q->where('locations.distributor_id', $id))
+            ->get(['locations.distributor_id', 'stock_balances.product_id', 'stock_balances.qty', 'stock_balances.reserved'])
+            ->groupBy('distributor_id')->map(fn ($g) => $g->mapWithKeys(fn ($b) => [$b->product_id => max(0, $b->qty - $b->reserved)]));
     }
 
     public function saveOrder(Request $r)

@@ -40,6 +40,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     Route::get('/shops', [E::class, 'shops'])->name('shops');
     Route::get('/shops/{shop}', [E::class, 'shop'])->name('shop');
     Route::get('/orders', [E::class, 'orders'])->name('orders');
+    Route::get('/orders/stock', [E::class, 'orderStock'])->name('orders.stock');
     Route::get('/invoices', [E::class, 'invoices'])->name('invoices');
     Route::get('/invoices/{invoice}', [E::class, 'invoice'])->name('invoice');
     Route::get('/payments', [E::class, 'payments'])->name('payments');

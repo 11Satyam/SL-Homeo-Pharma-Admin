@@ -40,4 +40,30 @@ class OrderStockAvailabilityTest extends TestCase
         $this->assertSame(1, Order::count(), 'short order is not created');
         $this->assertSame(4, (int) StockBalance::where('location_id', $loc->id)->where('product_id', $p1->id)->value('reserved'), 'nothing extra stays reserved');
     }
+
+    public function test_live_stock_endpoint_returns_current_free_stock_for_the_shops_distributor_only(): void
+    {
+        $admin = User::create(['name' => 'Admin', 'email' => 'admin@x.test', 'password' => 'secret-password', 'role' => 'admin']);
+        $d = Distributor::create(['business_name' => 'Alpha']);
+        $other = Distributor::create(['business_name' => 'Beta']);
+        $loc = Location::create(['name' => 'Alpha', 'type' => 'distributor', 'distributor_id' => $d->id]);
+        $otherLoc = Location::create(['name' => 'Beta', 'type' => 'distributor', 'distributor_id' => $other->id]);
+        $shop = Shop::create(['name' => 'City Medical', 'distributor_id' => $d->id]);
+        $otherShop = Shop::create(['name' => 'Far Pharmacy', 'distributor_id' => $other->id]);
+        $p = Product::create(['name' => 'Paracetamol', 'sku' => 'P1', 'selling_price' => 10]);
+        $this->actingAs($admin);
+        app(StockService::class)->move($p->id, Location::system('external'), $loc, 10, 'opening', 'o1');
+        app(StockService::class)->move($p->id, Location::system('external'), $otherLoc, 3, 'opening', 'o2');
+
+        $this->getJson(route('erp.orders.stock', ['shop' => $shop->id]))->assertOk()
+            ->assertJson(['distributor_id' => $d->id, 'stock' => [$p->id => 10]]);
+
+        // Another order reserves stock: the next poll sees the drop without reloading the page.
+        app(SalesService::class)->createOrder($shop, [$p->id => 7]);
+        $this->getJson(route('erp.orders.stock', ['shop' => $shop->id]))->assertJsonPath('stock.'.$p->id, 3);
+
+        // A distributor user cannot read another distributor's stock.
+        $distUser = User::create(['name' => 'Dist', 'email' => 'dist@x.test', 'password' => 'secret-password', 'role' => 'distributor', 'distributor_id' => $d->id]);
+        $this->actingAs($distUser)->getJson(route('erp.orders.stock', ['shop' => $otherShop->id]))->assertForbidden();
+    }
 }

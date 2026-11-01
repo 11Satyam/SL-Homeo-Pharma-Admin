@@ -130,17 +130,46 @@
         </x-erp.field>
       @endunless
     </div>
-    <div class="d-flex justify-content-between align-items-end mb-2 gap-2 flex-wrap"><div class="form-section mb-0">Products</div>
-      <div class="search-input" style="width:240px"><x-icon name="search" size="sm"/><input class="form-control form-control-sm" placeholder="Find product…" oninput="const q=this.value.toLowerCase();this.closest('.dlg-body').querySelectorAll('.qty-item').forEach(i=>i.hidden=!i.textContent.toLowerCase().includes(q))" aria-label="Find product"></div></div>
+    <div class="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap">
+      <div class="form-section mb-0">Products</div>
+      <div class="live-stock" data-stock-live hidden><span class="dot"></span><span data-stock-at>Live stock</span>
+        <button type="button" class="btn btn-sm btn-ghost" data-stock-refresh data-tip="Refresh stock now"><x-icon name="undo" size="sm"/><span class="sr-only">Refresh stock</span></button></div>
+    </div>
+    <div class="qty-filters" data-qty-filters>
+      <div class="search-input grow"><x-icon name="search" size="sm"/><input type="search" class="form-control form-control-sm" placeholder="Name, SKU or category…" data-f-q aria-label="Find product"></div>
+      @php($cats = $products->pluck('category')->filter()->unique()->sort()->values())
+      @if($cats->count())
+        <select class="form-select form-select-sm" data-f-cat aria-label="Category"><option value="">All categories</option>@foreach($cats as $c)<option value="{{ $c }}">{{ $c }}</option>@endforeach</select>
+      @endif
+      @php($rates = $products->pluck('tax_rate')->map(fn ($t) => (float) $t)->unique()->sort()->values())
+      @if($rates->count() > 1)
+        <select class="form-select form-select-sm" data-f-gst aria-label="GST rate"><option value="">Any GST</option>@foreach($rates as $t)<option value="{{ $t }}">GST {{ $t }}%</option>@endforeach</select>
+      @endif
+      <select class="form-select form-select-sm" data-f-sort aria-label="Sort products">
+        <option value="name">Sort: Name A–Z</option><option value="stock">Most in stock</option><option value="low">Least in stock</option><option value="price">Price: low to high</option><option value="-price">Price: high to low</option>
+      </select>
+    </div>
+    <div class="chips mb-2" role="group" aria-label="Filter by stock" data-f-chips>
+      @foreach(['' => 'All', 'in' => 'In stock', 'low' => 'Low', 'out' => 'Out of stock', 'picked' => 'In this order', 'short' => 'Short'] as $k => $l)
+        <button type="button" class="chip {{ $k === '' ? 'on' : '' }} {{ $k === 'short' ? 'bad' : '' }}" data-chip="{{ $k }}" aria-pressed="{{ $k === '' ? 'true' : 'false' }}" @if(in_array($k, ['in', 'low', 'out'])) data-needs-shop @endif>{{ $l }} <span class="n" data-chip-n></span></button>
+      @endforeach
+      <button type="button" class="btn btn-sm btn-ghost ms-auto" data-f-reset hidden>Clear filters</button>
+    </div>
     <div class="qty-grid">
       @foreach($products as $p)
-        <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span>{{ Fmt::money($p->selling_price) }} + {{ (float) $p->tax_rate }}% · {{ $p->unit }}</span><span class="avail" data-avail></span></span>
-          <input name="lines[{{ $p->id }}]" type="number" min="0" class="form-control form-control-sm" placeholder="0" data-price="{{ $p->selling_price }}" data-tax="{{ $p->tax_rate }}" data-product="{{ $p->id }}" data-reorder="{{ $p->reorder_level }}"
+        <label class="qty-item" data-name="{{ Str::lower($p->name) }}" data-search="{{ Str::lower($p->name.' '.$p->sku.' '.$p->category) }}" data-cat="{{ $p->category }}" data-gst="{{ (float) $p->tax_rate }}">
+          <span class="info"><b title="{{ $p->name }}">{{ $p->name }}</b>
+            <span>{{ Fmt::money($p->selling_price) }} + {{ (float) $p->tax_rate }}% · {{ $p->unit }}@if($p->category) · {{ $p->category }}@endif</span>
+            <span class="avail" data-avail></span>
+            <span class="meter" data-meter hidden><i></i></span>
+            <span class="line-total" data-line-total></span></span>
+          <input name="lines[{{ $p->id }}]" type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm" placeholder="0" data-price="{{ $p->selling_price }}" data-tax="{{ $p->tax_rate }}" data-product="{{ $p->id }}" data-reorder="{{ $p->reorder_level }}"
             value="{{ old('_form') === 'new-order' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity"></label>
       @endforeach
+      <div class="qty-none" data-qty-none hidden>No products match these filters. <button type="button" class="btn btn-link btn-sm p-0" data-f-reset>Clear filters</button></div>
     </div>
-    <script type="application/json" data-order-stock>@json(['stock' => $stock, 'locations' => $stockLocations])</script>
-    <div class="callout mt-3" data-stock-pick><x-icon name="info" size="sm"/>Select the shop to see how much of each product is in stock at its distributor.</div>
+    <script type="application/json" data-order-stock data-url="{{ route('erp.orders.stock') }}">@json(['stock' => $stock, 'locations' => $stockLocations, 'at' => now()->toIso8601String()])</script>
+    <div class="callout mt-3" data-stock-pick><x-icon name="info" size="sm"/>Select the shop to see how much of each product is in stock at its distributor. Stock refreshes live while this form is open.</div>
     <div class="alert alert-warning mt-3 mb-0" role="alert" data-stock-help hidden>
       <x-icon name="alert" size="sm"/>
       <div class="flex-grow-1">
@@ -160,10 +189,12 @@
       </div>
     </div>
     <x-erp.field form="new-order" class="mt-3" name="remarks" label="Remarks (optional)" maxlength="500" placeholder="Delivery instructions, preferred time…"/>
-    <div class="d-flex justify-content-between align-items-center mt-3 p-3" style="background:var(--surface-2);border-radius:10px;border:1px solid var(--border)">
-      <span class="text-muted" data-order-count>0 products</span>
-      <span>Estimated total incl. GST <b class="fs-5 ms-2" data-order-total>₹0.00</b></span>
+    <div class="order-sum mt-3">
+      <div><span class="text-muted" data-order-count>0 products</span><span class="cell-sub" data-order-units></span></div>
+      <div class="sum-figs"><span>Subtotal <b data-order-sub>₹0.00</b></span><span>GST <b data-order-gst>₹0.00</b></span>
+        <span>Total incl. GST <b class="fs-5 ms-1" data-order-total>₹0.00</b></span></div>
     </div>
+    <div class="small text-danger mt-2" data-order-block hidden><x-icon name="alert" size="sm"/> <span></span></div>
   </x-erp.modal>
 @endif
 @endsection
