@@ -93,10 +93,10 @@
   <x-erp.modal id="new-transfer" title="New transfer" subtitle="Saved as a draft. An admin approves it before dispatch." :action="route('erp.transfers.store')" submit="Create draft" size="wide">
     <div class="row g-3 mb-3">
       <x-erp.field form="new-transfer" class="col-md-4" name="from_location_id" label="From" required id="nt-from">
-        <select id="nt-from" name="from_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected((old('from_location_id') ?? request('from')) == $l->id)>{{ $l->name }} · {{ Fmt::label($l->type) }}</option>@endforeach</select>
+        <select id="nt-from" name="from_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected((old('from_location_id') ?? request('from')) == $l->id)>{{ $l->name }} · {{ Fmt::label($l->type) }}{{ $l->distributor?->status === 'inactive' ? ' (inactive)' : '' }}</option>@endforeach</select>
       </x-erp.field>
       <x-erp.field form="new-transfer" class="col-md-4" name="to_location_id" label="To" required id="nt-to">
-        <select id="nt-to" name="to_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected(old('to_location_id') || request('to') ? (old('to_location_id') ?? request('to')) == $l->id : $l->type === 'distributor')>{{ $l->name }} · {{ Fmt::label($l->type) }}</option>@endforeach</select>
+        <select id="nt-to" name="to_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected(old('to_location_id') || request('to') ? (old('to_location_id') ?? request('to')) == $l->id : $l->type === 'distributor')>{{ $l->name }} · {{ Fmt::label($l->type) }}{{ $l->distributor?->status === 'inactive' ? ' (inactive)' : '' }}</option>@endforeach</select>
       </x-erp.field>
       <x-erp.field form="new-transfer" class="col-md-4" name="remarks" label="Remarks / vehicle no." maxlength="255" placeholder="MH-04-AB-1234"/>
     </div>
@@ -108,10 +108,14 @@
       <div class="search-input" style="width:220px"><x-icon name="search" size="sm"/><input class="form-control form-control-sm" placeholder="Find product…" oninput="const q=this.value.toLowerCase();this.closest('.dlg-body').querySelectorAll('.qty-item').forEach(i=>i.hidden=!i.textContent.toLowerCase().includes(q))" aria-label="Find product"></div></div>
     <div class="qty-grid">
       @foreach($products as $p)
-        <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span class="mono">{{ $p->sku }} · {{ $p->unit }}</span></span>
-          <input name="lines[{{ $p->id }}]" type="number" min="0" class="form-control form-control-sm" placeholder="0" value="{{ old('_form') === 'new-transfer' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity"></label>
+        <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span class="mono">{{ $p->sku }} · {{ $p->unit }}</span>
+            <span class="avail" data-avail></span><span class="line-total" data-dest></span></span>
+          <input name="lines[{{ $p->id }}]" type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm" placeholder="0" data-product="{{ $p->id }}" value="{{ old('_form') === 'new-transfer' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity"></label>
       @endforeach
     </div>
+    <script type="application/json" data-transfer-stock data-url="{{ route('erp.transfers.stock') }}">@json(['stock' => (object) $locationStock->all(), 'at' => now()->toIso8601String()])</script>
+    <div class="live-stock mt-2" data-stock-live><span class="dot"></span><span data-stock-at>Live stock</span></div>
+    <div class="alert alert-warning mt-3 mb-0" role="alert" data-stock-help hidden><b>Not enough stock at the source</b><ul class="mb-0 mt-1 ps-3" data-stock-list></ul></div>
   </x-erp.modal>
 @endif
 @endsection

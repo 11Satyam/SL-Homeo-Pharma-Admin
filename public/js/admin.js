@@ -243,6 +243,56 @@
     update(); filter(); stamp(Date.parse(data.at));
   });
 
+  /* ---------- New transfer: live free stock at the source (and what the destination already has) ---------- */
+  $$('[data-transfer-stock]').forEach(function (el) {
+    var data = JSON.parse(el.textContent), url = el.getAttribute('data-url'), form = el.closest('form'), dlg = form.closest('dialog');
+    var from = $('select[name="from_location_id"]', form), to = $('select[name="to_location_id"]', form), submit = $('button[type=submit]', form);
+    var help = $('[data-stock-help]', form), list = $('[data-stock-list]', form), live = $('[data-stock-live]', form), liveAt = $('[data-stock-at]', form);
+    var inputs = $$('input[data-product]', form), fetchedAt = 0, busy = null;
+    var name = function (s) { var o = s && s.selectedOptions[0]; return o ? o.textContent.split(' · ')[0] : ''; };
+    var stamp = function (t, err) {
+      var hm = t ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+      live.classList.toggle('busy', !!busy); live.classList.toggle('err', !!err);
+      liveAt.textContent = busy ? 'Checking stock…' : err ? 'Could not refresh stock, showing figures from ' + hm : 'Live stock at ' + name(from) + ' · updated ' + hm;
+    };
+    var update = function () {
+      var src = data.stock[from.value] || {}, dst = data.stock[to.value] || {}, short = [];
+      inputs.forEach(function (i) {
+        var item = i.closest('.qty-item'), p = i.dataset.product, a = src[p] || 0, q = parseInt(i.value, 10) || 0, isShort = q > a;
+        var tag = $('[data-avail]', item), dest = $('[data-dest]', item);
+        tag.textContent = a > 0 ? a + ' available' + (q > 0 && !isShort ? ' · ' + (a - q) + ' left after' : '') : 'None at ' + name(from);
+        tag.className = 'avail ' + (a <= 0 ? 'bad' : isShort ? 'warn' : 'ok');
+        dest.textContent = to.value && to.value !== from.value ? name(to) + ' has ' + (dst[p] || 0) + (q > 0 && !isShort ? ' → ' + ((dst[p] || 0) + q) : '') : '';
+        item.classList.toggle('picked', q > 0); item.classList.toggle('short', isShort); item.classList.toggle('none', a <= 0);
+        i.max = a;
+        i.setCustomValidity(isShort ? (a > 0 ? 'Only ' + a + ' available at ' + name(from) + '.' : 'None available at ' + name(from) + '.') : '');
+        if (isShort) short.push($('b', item).textContent + ': sending ' + q + ', ' + (a > 0 ? 'only ' + a : 'none') + ' available');
+      });
+      list.textContent = '';
+      short.forEach(function (t) { var li = d.createElement('li'); li.textContent = t; list.appendChild(li); });
+      help.hidden = !short.length;
+      if (submit) submit.disabled = short.length > 0;
+    };
+    var load = function (sel) {
+      var id = sel.value;
+      if (!url || !id || !window.fetch) return Promise.resolve(false);
+      if (busy) return busy;
+      stamp(fetchedAt);
+      busy = fetch(url + '?location=' + encodeURIComponent(id), { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (res) { data.stock[res.location_id] = res.stock || {}; if (sel === from) fetchedAt = Date.parse(res.at) || Date.now(); busy = null; update(); stamp(fetchedAt); return true; })
+        .catch(function () { busy = null; stamp(fetchedAt || Date.parse(data.at), true); return false; });
+      return busy;
+    };
+    var both = function () { return load(from).then(function () { return load(to); }); };
+    form.addEventListener('input', update);
+    from.addEventListener('change', function () { fetchedAt = 0; update(); load(from); });
+    to.addEventListener('change', function () { update(); load(to); });
+    if (dlg && window.MutationObserver) new MutationObserver(function () { if (dlg.open) both(); }).observe(dlg, { attributes: true, attributeFilter: ['open'] });
+    setInterval(function () { if ((!dlg || dlg.open) && !d.hidden) load(from); }, 15000);
+    update(); stamp(Date.parse(data.at));
+  });
+
   /* ---------- Confirmation dialog (replaces window.confirm) ---------- */
   var cdlg = d.getElementById('confirm-dlg'), pending = null;
   d.addEventListener('submit', function (e) {

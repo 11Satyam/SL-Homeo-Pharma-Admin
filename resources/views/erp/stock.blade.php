@@ -5,9 +5,11 @@
 @section('subtitle', 'Live balances from the stock ledger. Available = on hand − reserved for confirmed orders.')
 @php($canPost = auth()->user()->hasRole('admin', 'inventory_manager'))
 @php($byLoc = $balances->groupBy('location_id'))
+@php($isAdmin = auth()->user()->hasRole('admin'))
 @section('actions')
   @if($canPost)
     <button type="button" class="btn btn-light" data-open="new-warehouse"><x-icon name="warehouse" size="sm"/>New warehouse</button>
+    @if($isAdmin && $warehouses->isNotEmpty())<button type="button" class="btn btn-light" data-open="manage-warehouses"><x-icon name="ban" size="sm"/>Delete warehouse</button>@endif
     <button type="button" class="btn btn-light" data-open="write-off" @disabled($warehouses->isEmpty())><x-icon name="alert" size="sm"/>Write-off</button>
     <button type="button" class="btn btn-primary" data-open="receive-stock" @disabled($warehouses->isEmpty())><x-icon name="download" size="sm"/>Receive stock</button>
   @endif
@@ -96,6 +98,32 @@
       <x-erp.field form="write-off" class="col-md-8" name="reason" label="Reason" required maxlength="255" placeholder="Broken in handling, expired batch B2304…"/>
     </div>
   </x-erp.modal>
+
+  @if($isAdmin)
+    <dialog id="manage-warehouses" class="modal-x" aria-labelledby="manage-warehouses-t">
+      <div class="dlg-head">
+        <div><h2 id="manage-warehouses-t">Delete a warehouse</h2><p>Only an empty warehouse with no open transfers can be deleted. Its past movements stay in the Stock Ledger.</p></div>
+        <button type="button" class="icon-btn" data-close aria-label="Close"><x-icon name="x"/></button>
+      </div>
+      <div class="dlg-body">
+        <table class="table mb-0"><thead><tr><th>Warehouse</th><th class="text-end">On hand</th><th></th></tr></thead><tbody>
+        @foreach($warehouses as $w)
+          @php($held = (int) $w->on_hand)
+          <tr>
+            <td>{{ $w->name }}</td>
+            <td class="text-end num">{{ Fmt::num($held) }}</td>
+            <td class="text-end">
+              <form method="post" action="{{ route('erp.warehouses.delete', $w) }}" data-confirm="Delete warehouse &quot;{{ $w->name }}&quot;? It disappears from stock, receipts and transfers. This cannot be undone." data-confirm-ok="Delete warehouse" data-tone="danger">@csrf
+                <button class="btn btn-sm btn-outline-danger" @disabled($held !== 0) @if($held !== 0) data-tip="Move or write off its {{ Fmt::num($held) }} units first" @endif>Delete</button>
+              </form>
+            </td>
+          </tr>
+        @endforeach
+        </tbody></table>
+      </div>
+      <div class="dlg-foot"><button type="button" class="btn btn-light" data-close>Close</button></div>
+    </dialog>
+  @endif
 
   <x-erp.modal id="new-warehouse" title="New warehouse" subtitle="Creates an internal stock location for receipts and transfers." :action="route('erp.warehouses.store')" submit="Create warehouse" size="narrow">
     <x-erp.field form="new-warehouse" name="name" label="Warehouse name" required maxlength="100" placeholder="e.g. Bhiwandi Central Warehouse"/>

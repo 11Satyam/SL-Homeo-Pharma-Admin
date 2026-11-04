@@ -232,15 +232,55 @@ class ErpController extends Controller
             ->where('qty', '!=', 0)->orderBy('location_id')->get();
 
         return view('erp.stock', [
-            'balances' => $balances, 'warehouses' => Location::where('type', 'warehouse')->get(),
+            'balances' => $balances,
+            'warehouses' => Location::where('type', 'warehouse')->whereNull('archived_at')->orderBy('name')
+                ->withSum('balances as on_hand', 'qty')->withSum('balances as reserved', 'reserved')->get(),
             'products' => Product::where('active', true)->orderBy('name')->get(),
         ]);
+    }
+
+    /**
+     * Admin: remove a warehouse. Only an empty one with no open transfers can go. One that was never used is
+     * deleted; one with ledger history is archived (hidden everywhere) so past movements keep their location.
+     */
+    public function deleteWarehouse(Location $location)
+    {
+        abort_unless($location->type === 'warehouse' && ! $location->archived_at, 404);
+        $name = $location->name;
+
+        $archived = DB::transaction(function () use ($location, $name) {
+            $loc = Location::lockForUpdate()->findOrFail($location->id);
+            $held = (int) StockBalance::where('location_id', $loc->id)->sum('qty');
+            if ($held !== 0) {
+                $this->fail('action', "\"{$name}\" still holds {$held} unit(s). Transfer them to another location or write them off first, then delete the warehouse.");
+            }
+            $open = Transfer::where(fn ($q) => $q->where('from_location_id', $loc->id)->orWhere('to_location_id', $loc->id))
+                ->whereIn('status', ['draft', 'approved', 'in_transit', 'partially_received'])->pluck('number');
+            if ($open->isNotEmpty()) {
+                $this->fail('action', "\"{$name}\" has open transfers ({$open->implode(', ')}). Finish them before deleting the warehouse.");
+            }
+            $used = StockMovement::where('from_location_id', $loc->id)->orWhere('to_location_id', $loc->id)->exists()
+                || Transfer::where('from_location_id', $loc->id)->orWhere('to_location_id', $loc->id)->exists();
+            AuditLog::record($used ? 'warehouse.archived' : 'warehouse.deleted', $loc, ['name' => $name]);
+            if ($used) {
+                $loc->update(['archived_at' => now()]);
+            } else {
+                StockBalance::where('location_id', $loc->id)->delete();
+                $loc->delete();
+            }
+
+            return $used;
+        });
+
+        return $this->done($archived
+            ? "Warehouse \"{$name}\" deleted. Its past stock movements stay in the Stock Ledger."
+            : "Warehouse \"{$name}\" deleted.");
     }
 
     public function saveWarehouse(Request $r)
     {
         $name = trim($r->validate(['name' => 'required|max:100'])['name']);
-        if (Location::where('type', 'warehouse')->whereRaw('LOWER(name) = ?', [Str::lower($name)])->exists()) {
+        if (Location::where('type', 'warehouse')->whereNull('archived_at')->whereRaw('LOWER(name) = ?', [Str::lower($name)])->exists()) {
             $this->fail('name', "A warehouse called \"{$name}\" already exists.");
         }
         $loc = Location::create(['name' => $name, 'type' => 'warehouse']);
@@ -253,7 +293,7 @@ class ErpController extends Controller
     public function receiveStock(Request $r)
     {
         $d = $r->validate([
-            'location_id' => ['required', Rule::exists('locations', 'id')->where('type', 'warehouse')],
+            'location_id' => ['required', Rule::exists('locations', 'id')->where('type', 'warehouse')->whereNull('archived_at')],
             'product_id' => 'required|exists:products,id', 'qty' => 'required|integer|min:1',
             'type' => 'required|in:opening,receipt', 'reason' => 'nullable|max:255', 'key' => 'required|string|max:64',
         ], ['location_id.required' => 'Choose a warehouse. If there is none yet, create one first.', 'qty.min' => 'Enter how many units arrived (at least 1).']);
@@ -488,20 +528,52 @@ class ErpController extends Controller
     public function transfers(Request $r)
     {
         $status = $r->validate(['status' => 'nullable|in:draft,approved,in_transit,partially_received,received'])['status'] ?? null;
+        $locations = $this->transferLocations();
 
         return view('erp.transfers', [
             'transfers' => $this->scopedTransfers()->with('from', 'to', 'lines.product')
                 ->when($status, fn ($q, $s) => $q->where('status', $s))->latest('id')->paginate(25)->withQueryString(),
             'statusCounts' => $this->scopedTransfers()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status'),
-            'locations' => Location::whereIn('type', ['warehouse', 'distributor'])->get(),
+            'locations' => $locations,
+            'locationStock' => $this->locationStock($locations->pluck('id')->all()),
             'products' => Product::where('active', true)->orderBy('name')->get(),
         ]);
     }
 
+    /** Live free stock at one location, polled by the New transfer form while it is open. */
+    public function transferStock(Request $r)
+    {
+        $loc = Location::whereIn('type', ['warehouse', 'distributor'])->findOrFail($r->validate(['location' => 'required|integer'])['location']);
+
+        return response()->json(['location_id' => $loc->id,
+            'stock' => (object) ($this->locationStock([$loc->id])->get($loc->id)?->all() ?? []), 'at' => now()->toIso8601String()]);
+    }
+
+    /**
+     * Warehouses first, then every distributor. A distributor added without a stock location (imported, or
+     * created before locations were automatic) gets one here, so it can still be chosen as a destination.
+     */
+    private function transferLocations()
+    {
+        Distributor::whereDoesntHave('location')->get()
+            ->each(fn ($dist) => Location::create(['name' => $dist->business_name, 'type' => 'distributor', 'distributor_id' => $dist->id]));
+
+        return Location::with('distributor')->whereIn('type', ['warehouse', 'distributor'])->whereNull('archived_at')
+            ->orderByRaw("CASE WHEN type = 'warehouse' THEN 0 ELSE 1 END")->orderBy('name')->get();
+    }
+
+    /** Free stock (on hand minus reserved) per location and product. */
+    private function locationStock(array $locationIds)
+    {
+        return StockBalance::whereIn('location_id', $locationIds)->get(['location_id', 'product_id', 'qty', 'reserved'])
+            ->groupBy('location_id')->map(fn ($g) => $g->mapWithKeys(fn ($b) => [$b->product_id => max(0, $b->qty - $b->reserved)]));
+    }
+
     public function saveTransfer(Request $r)
     {
+        $active = fn () => Rule::exists('locations', 'id')->whereIn('type', ['warehouse', 'distributor'])->whereNull('archived_at');
         $d = $r->validate([
-            'from_location_id' => 'required|exists:locations,id', 'to_location_id' => 'required|exists:locations,id',
+            'from_location_id' => ['required', $active()], 'to_location_id' => ['required', $active()],
             'lines' => 'required|array', 'lines.*' => 'nullable|integer|min:0', 'remarks' => 'nullable|max:255',
         ], ['lines.required' => 'Enter a quantity for at least one product.']);
         if ((int) $d['from_location_id'] === (int) $d['to_location_id']) {
@@ -510,7 +582,15 @@ class ErpController extends Controller
         if (! self::anyQty($d['lines'])) {
             $this->fail('lines', 'Enter a quantity for at least one product.');
         }
-        $t = $this->transfers->create(Location::findOrFail($d['from_location_id']), Location::findOrFail($d['to_location_id']), $d['lines'], $d['remarks'] ?? null);
+        $from = Location::findOrFail($d['from_location_id']);
+        $free = $this->locationStock([$from->id])->get($from->id) ?? collect();
+        $short = Product::whereIn('id', array_keys(array_filter($d['lines'], fn ($q) => (int) $q > 0)))->get()
+            ->filter(fn ($p) => (int) $d['lines'][$p->id] > ($free[$p->id] ?? 0))
+            ->map(fn ($p) => "{$p->name} (sending {$d['lines'][$p->id]}, ".(($free[$p->id] ?? 0) > 0 ? "only {$free[$p->id]}" : 'none').' available)');
+        if ($short->isNotEmpty()) {
+            $this->fail('lines', "Not enough stock at {$from->name} for ".$short->implode(', ').'. Lower these quantities, or receive more stock first.');
+        }
+        $t = $this->transfers->create($from, Location::findOrFail($d['to_location_id']), $d['lines'], $d['remarks'] ?? null);
 
         // Admins approve their own transfers anyway; "approve now" saves a second click.
         if ($r->boolean('approve_now') && $r->user()->hasRole('admin')) {

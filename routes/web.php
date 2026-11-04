@@ -76,6 +76,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
         Route::post('/stock/receive', [E::class, 'receiveStock'])->name('stock.receive');
         Route::post('/stock/adjust', [E::class, 'adjustStock'])->name('stock.adjust');
         Route::post('/transfers', [E::class, 'saveTransfer'])->name('transfers.store');
+        Route::get('/transfers/stock', [E::class, 'transferStock'])->name('transfers.stock');
     });
     Route::middleware('role:viewer')->get('/audit', [E::class, 'audit'])->name('audit');
     // Admin-only: Role middleware always admits admin, and no real role is named "__admin_only".
@@ -86,5 +87,6 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
         Route::post('/distributors/{distributor}/status', [E::class, 'setDistributorStatus'])->name('distributors.status');
         Route::post('/distributors/{distributor}/geofence', [E::class, 'setGeofence'])->name('distributors.geofence');
         Route::post('/ledger/{movement}/reverse', [E::class, 'reverseMovement'])->name('ledger.reverse');
+        Route::post('/warehouses/{location}/delete', [E::class, 'deleteWarehouse'])->name('warehouses.delete');
     });
 });
