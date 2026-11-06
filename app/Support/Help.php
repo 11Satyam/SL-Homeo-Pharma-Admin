@@ -50,6 +50,13 @@ final class Help
             'example' => 'Sharma Distributors, contact Anil Sharma, email anil@sharma.example, area Andheri.',
             'next' => ['Send stock to a distributor', 'erp.transfers'],
         ],
+        'erp.distributors.show' => [
+            'title' => 'Distributor details',
+            'what' => 'The profile and full stock history of one distributor. Every figure comes from the Stock Ledger, so it always matches what was posted.',
+            'steps' => ['Check the cards for allocated, available, sold, in transit, returned and damaged stock.', 'Open Stock movements to filter the history by product, type or date, then use the eye icon to trace one entry.', 'Use Allocate stock or Transfer out to send stock, and Damage / adjust to record a loss with a reason.'],
+            'example' => 'Search SO-2611 to find every stock entry for that order.',
+            'next' => ['Send stock to a distributor', 'erp.transfers'],
+        ],
         'erp.users' => [
             'title' => 'Users & Staff',
             'what' => 'People who can sign in. You never set someone\'s password: they get an email link and choose their own.',

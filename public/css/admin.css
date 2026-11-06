@@ -681,3 +681,15 @@ dialog.modal-x .dlg-head { background: linear-gradient(90deg, color-mix(in srgb,
 .erp code { color: var(--violet); background: var(--violet-bg); padding: .05rem .3rem; border-radius: 4px; font-size: .78rem; }
 .erp .border-top-0 { border-top: 0 !important; }
 .json-cell { font-family: var(--mono); font-size: .74rem; color: var(--muted); max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Activity timeline and printed stock reports ---------- */
+.timeline { list-style: none; margin: 0; padding: .5rem 1.25rem 1rem 2rem; }
+.timeline li { position: relative; padding: .6rem 0; border-left: 2px solid var(--border); padding-left: 1rem; margin-left: -.9rem; }
+.timeline li::before { content: ""; position: absolute; left: -6px; top: 1rem; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
+.timeline .when { color: var(--muted); font-size: .75rem; }
+.timeline .what { overflow-wrap: anywhere; }
+@media print {
+  .print-report .table-wrap { overflow: visible; }
+  .print-report .table { font-size: 10px; }
+  .print-report tr { break-inside: avoid; }
+}

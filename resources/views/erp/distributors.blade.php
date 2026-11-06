@@ -4,6 +4,7 @@
 @section('crumb')<span>Administration</span>@endsection
 @section('subtitle', 'Each distributor gets a login, its own stock location and isolated shops, staff and finances.')
 @section('actions')
+  <a href="{{ route('erp.distributors.report') }}" class="btn btn-light"><x-icon name="ledger" size="sm"/>Stock report</a>
   <button type="button" class="btn btn-primary" data-open="add-dist"><x-icon name="plus" size="sm"/>Register distributor</button>
 @endsection
 @section('content')
@@ -18,7 +19,7 @@
     <tbody>
     @foreach($distributors as $d)
       <tr>
-        <td><span class="d-flex align-items-center gap-2"><span class="avatar" style="background: {{ Fmt::avatarColor($d->business_name) }};border-radius:8px">{{ Fmt::initials($d->business_name) }}</span><span><span class="cell-main">{{ $d->business_name }}</span><span class="cell-sub">Since {{ $d->created_at->format('M Y') }}</span></span></span></td>
+        <td><span class="d-flex align-items-center gap-2"><span class="avatar" style="background: {{ Fmt::avatarColor($d->business_name) }};border-radius:8px">{{ Fmt::initials($d->business_name) }}</span><span><a href="{{ route('erp.distributors.show', $d) }}" class="cell-main">{{ $d->business_name }}</a><span class="cell-sub">Since {{ $d->created_at->format('M Y') }}</span></span></span></td>
         <td>{{ $d->contact_person ?: '—' }}<span class="cell-sub">{{ $d->phone }} {{ $d->email }}</span></td>
         <td>{{ $d->area ?: '—' }}</td>
         <td class="text-end num">{{ $d->shops_count }}</td>
@@ -29,6 +30,7 @@
         <td class="actions">
           <details class="menu"><summary class="btn btn-sm btn-ghost" aria-label="Actions for {{ $d->business_name }}"><x-icon name="more"/></summary>
             <div class="menu-pop">
+              <a class="mi" href="{{ route('erp.distributors.show', $d) }}"><x-icon name="eye" size="sm"/>Details &amp; stock</a>
               <button type="button" class="mi" data-open="edit-dist-{{ $d->id }}"><x-icon name="edit" size="sm"/>Edit details…</button>
               <button type="button" class="mi" data-open="geo-{{ $d->id }}"><x-icon name="pin" size="sm"/>Attendance geofence…</button>
               <a class="mi" href="{{ route('erp.shops') }}"><x-icon name="store" size="sm"/>View shops</a>

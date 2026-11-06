@@ -16,6 +16,7 @@ Route::get('/video', [HomeController::class, 'video']);
 
 // ---------------- Distribution ERP ----------------
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DistributorStockController as DS;
 use App\Http\Controllers\ErpController as E;
 
 Route::middleware('guest')->group(function () {
@@ -82,6 +83,11 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     // Admin-only: Role middleware always admits admin, and no real role is named "__admin_only".
     Route::middleware('role:__admin_only')->group(function () {
         Route::get('/distributors', [E::class, 'distributors'])->name('distributors');
+        Route::get('/distributors/report', [DS::class, 'report'])->name('distributors.report');
+        Route::get('/distributors/{distributor}', [DS::class, 'show'])->whereNumber('distributor')->name('distributors.show');
+        Route::get('/distributors/{distributor}/export', [DS::class, 'export'])->whereNumber('distributor')->name('distributors.export');
+        Route::post('/distributors/{distributor}/stock', [DS::class, 'operate'])->whereNumber('distributor')->name('distributors.stock');
+        Route::get('/ledger/{movement}', [DS::class, 'movement'])->whereNumber('movement')->name('ledger.show');
         Route::post('/distributors', [E::class, 'saveDistributor'])->name('distributors.store');
         Route::post('/distributors/{distributor}', [E::class, 'updateDistributor'])->name('distributors.update');
         Route::post('/distributors/{distributor}/status', [E::class, 'setDistributorStatus'])->name('distributors.status');

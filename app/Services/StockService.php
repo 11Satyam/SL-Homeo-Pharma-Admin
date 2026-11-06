@@ -12,12 +12,12 @@ use RuntimeException;
 /**
  * The stock ledger is the single source of truth. Every quantity change is a
  * movement from one location to another; balances are a cached projection
- * updated in the same DB transaction. External/customer/damaged locations are
+ * updated in the same DB transaction. External/customer/damaged/missing/adjustment locations are
  * sinks/sources and may go negative; internal locations never can.
  */
 class StockService
 {
-    public const SINKS = ['external', 'customer', 'damaged'];
+    public const SINKS = ['external', 'customer', 'damaged', 'missing', 'adjustment'];
 
     public function move(int $productId, Location $from, Location $to, int $qty, string $type,
         string $key, ?string $reference = null, ?string $reason = null): StockMovement

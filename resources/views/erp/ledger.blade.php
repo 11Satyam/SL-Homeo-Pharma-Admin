@@ -6,6 +6,8 @@
 @php($isAdmin = auth()->user()->hasRole('admin'))
 @php($types = ['opening' => 'Opening', 'receipt' => 'Receipt', 'transfer_dispatch' => 'Transfer dispatch', 'transfer_receive' => 'Transfer receipt', 'transfer_damage' => 'Transit damage', 'sale' => 'Sale (delivery)', 'return' => 'Return to stock', 'return_damaged' => 'Return (damaged)', 'damage_adjustment' => 'Write-off', 'reversal' => 'Reversal'])
 @php($tone = ['opening' => 'info', 'receipt' => 'info', 'transfer_dispatch' => 'violet', 'transfer_receive' => 'violet', 'sale' => 'ok', 'return' => 'warn', 'return_damaged' => 'bad', 'transfer_damage' => 'bad', 'damage_adjustment' => 'bad', 'reversal' => 'neutral'])
+@php($types += ['stock_missing' => 'Missing stock', 'stock_adjustment' => 'Stock adjustment'])
+@php($tone += ['stock_missing' => 'bad', 'stock_adjustment' => 'warn'])
 @section('actions')
   <a href="{{ request()->fullUrlWithQuery(['export' => 1]) }}" class="btn btn-light" data-no-load><x-icon name="download" size="sm"/>Export CSV</a>
 @endsection
@@ -40,7 +42,7 @@
         <td>@if($m->reference)<span class="mono">{{ $m->reference }}</span>@endif @if($m->reason)<span class="cell-sub">{{ Str::limit($m->reason, 50) }}</span>@endif @if(! $m->reference && ! $m->reason)<span class="text-muted">—</span>@endif</td>
         <td>@if($m->user)<span class="d-inline-flex align-items-center gap-2"><span class="avatar sm" style="background: {{ Fmt::avatarColor($m->user->name) }}">{{ Fmt::initials($m->user->name) }}</span>{{ $m->user->name }}</span>@else<span class="text-muted">System</span>@endif</td>
         @if($isAdmin)
-        <td class="actions">@if($m->type !== 'reversal')<button type="button" class="btn btn-sm btn-ghost" data-open="rev-{{ $m->id }}" data-tip="Reverse|Post an equal and opposite entry"><x-icon name="undo" size="sm"/><span class="sr-only">Reverse</span></button>@endif</td>
+        <td class="actions"><a href="{{ route('erp.ledger.show', $m) }}" class="btn btn-sm btn-ghost" aria-label="View entry {{ $m->id }}" data-tip="View details|Full transaction and trace"><x-icon name="eye" size="sm"/></a>@if($m->type !== 'reversal')<button type="button" class="btn btn-sm btn-ghost" data-open="rev-{{ $m->id }}" data-tip="Reverse|Post an equal and opposite entry"><x-icon name="undo" size="sm"/><span class="sr-only">Reverse</span></button>@endif</td>
         @endif
       </tr>
     @endforeach
