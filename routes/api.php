@@ -46,6 +46,7 @@ Route::prefix('app')->group(function () {
         Route::delete('/cart/items/{product}', [CartController::class, 'remove'])->whereNumber('product');
 
         Route::middleware('throttle:app-write')->group(function () {
+            Route::post('/parties', [CatalogController::class, 'storeParty']);
             Route::post('/cart/checkout', [CartController::class, 'checkout']);
             Route::post('/orders', [OrderController::class, 'store']);
             Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);

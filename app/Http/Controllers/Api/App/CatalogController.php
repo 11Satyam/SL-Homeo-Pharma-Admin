@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\App;
 
 use App\Http\Resources\App\ProductResource;
 use App\Http\Resources\App\ShopResource;
+use App\Models\AuditLog;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\Shop;
@@ -23,6 +24,30 @@ class CatalogController extends FieldController
             ->orderBy('name');
 
         return ShopResource::collection($q->paginate($p['per_page'] ?? 50)->withQueryString());
+    }
+
+    /**
+     * Add a shop for the caller's distributor. Credit limit and payment terms stay at the distributor's defaults:
+     * only the distributor can change them from the Admin Panel. A shop that already exists is returned with 409
+     * instead of being added twice, so a network retry is safe without an Idempotency-Key.
+     */
+    public function storeParty(Request $r)
+    {
+        $d = $r->validate([
+            'name' => 'required|string|max:255', 'owner' => 'nullable|string|max:255', 'phone' => 'nullable|string|max:30',
+            'area' => 'nullable|string|max:100', 'address' => 'nullable|string|max:500',
+        ]);
+        if ($dupe = Shop::duplicateOf($this->did(), $d['name'], $d['area'] ?? null, $d['phone'] ?? null)) {
+            return (new ShopResource($dupe))->additional([
+                'message' => "\"{$dupe->name}\"".($dupe->area ? " in {$dupe->area}" : '').' already exists.'
+                    .($dupe->status === 'active' ? ' Use it instead of adding it again.' : ' It is inactive: ask your distributor to activate it.'),
+                'code' => 'duplicate_shop',
+            ])->response()->setStatusCode(409);
+        }
+        $shop = Shop::create(array_filter($d, fn ($v) => $v !== null) + ['distributor_id' => $this->did()]);
+        AuditLog::record('shop.created', $shop, ['source' => 'field_app']);
+
+        return (new ShopResource($shop->fresh()))->response()->setStatusCode(201);
     }
 
     /** Open invoices for a shop, for allocating a collection. */

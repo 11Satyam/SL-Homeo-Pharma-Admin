@@ -185,6 +185,27 @@
               "description": "Replace 1 with actual shop ID"
             }
           }
+        },
+        {
+          "name": "Add Party (Shop)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gupta Medicals\",\n  \"owner\": \"R. Gupta\",\n  \"phone\": \"9876543210\",\n  \"area\": \"Andheri West\",\n  \"address\": \"Shop 4, SV Road\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/app/parties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "app", "parties"]
+            },
+            "description": "Adds a shop for the logged-in staff member's distributor. Only name is required. 201 = created; 409 code duplicate_shop = it already exists and data holds that shop. Credit limit and payment terms are set by the distributor in the Admin Panel."
+          }
         }
       ]
     },

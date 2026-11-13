@@ -25,7 +25,7 @@ The examples below are real responses captured from the test suite. Pagination l
 | 401 | `unauthenticated`, `invalid_credentials`, `invalid_token` | Go to Login |
 | 403 | `account_inactive`, `role_not_permitted` | Show message, go to Login (tokens have been revoked) |
 | 404 | `not_found`: missing, or belongs to another distributor/staff member | |
-| 409 | `attendance_conflict`. The body's `data` holds the current attendance state | Resync UI |
+| 409 | `attendance_conflict` (body `data` = current attendance state), `duplicate_shop` (body `data` = the existing shop) | Resync UI / select the existing shop |
 | 422 | Validation (`errors`) or business rule (`message`, e.g. insufficient stock) | Show message |
 | 429 | Rate limited (`Retry-After` header) | Back off |
 
@@ -116,6 +116,23 @@ Active shops of your distributor. `search` matches name, owner or phone.
 { "data": [ { "id": 1, "name": "Gupta Medicals", "owner": "R. Gupta", "phone": "9876543210", "area": "Andheri West",
   "address": null, "credit_limit": "50000.00", "payment_terms_days": 15 } ], "links": {}, "meta": {} }
 ```
+
+### `POST /parties`
+Adds a shop for your distributor. Only `name` is required. The distributor is taken from your login, and the shop is active straight away.
+```json
+{ "name": "Gupta Medicals", "owner": "R. Gupta", "phone": "9876543210", "area": "Andheri West", "address": "Shop 4, SV Road" }
+```
+Limits: `name` and `owner` 255 characters, `phone` 30, `area` 100, `address` 500. Credit limit and payment terms cannot be sent from the app: new shops get ₹0 credit and the default 15 days, and the distributor changes them in the Admin Panel.
+
+**201** returns the new shop in the same shape as `GET /parties`.
+
+**409** `duplicate_shop`: a shop with the same name in the same area, or with the same phone, already exists for your distributor. `data` holds that shop, so the app can select it instead. This also makes a network retry safe, so no `Idempotency-Key` is needed.
+```json
+{ "data": { "id": 1, "name": "Gupta Medicals", "owner": "R. Gupta", "phone": "9876543210", "area": "Andheri West",
+  "address": "Shop 4, SV Road", "credit_limit": "0.00", "payment_terms_days": 15 },
+  "message": "\"Gupta Medicals\" in Andheri West already exists. Use it instead of adding it again.", "code": "duplicate_shop" }
+```
+If that shop is inactive, the message says to ask the distributor to activate it.
 
 ### `GET /parties/{shopId}/invoices`
 Open invoices for the shop, used for allocating a collection.

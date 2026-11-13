@@ -686,12 +686,7 @@ class ErpController extends Controller
             'credit_limit' => 'nullable|numeric|min:0', 'payment_terms_days' => 'nullable|integer|min:0|max:365',
         ]);
         $d['distributor_id'] = $r->user()->scopedDistributorId() ?? $d['distributor_id'] ?? $this->fail('distributor_id', 'Choose which distributor supplies this shop.');
-        // Same name in the same area, or with the same phone, under one distributor is almost always a double entry.
-        $dupe = Shop::where('distributor_id', $d['distributor_id'])->whereRaw('LOWER(name) = ?', [Str::lower(trim($d['name']))])
-            ->where(fn ($q) => $q->where(fn ($q) => isset($d['area']) ? $q->whereRaw('LOWER(area) = ?', [Str::lower($d['area'])]) : $q->whereNull('area'))
-                ->orWhere(fn ($q) => $q->whereNotNull('phone')->where('phone', $d['phone'] ?? '')))
-            ->first();
-        if ($dupe) {
+        if ($dupe = Shop::duplicateOf((int) $d['distributor_id'], $d['name'], $d['area'] ?? null, $d['phone'] ?? null)) {
             $this->fail('name', "\"{$dupe->name}\"".($dupe->area ? " in {$dupe->area}" : '').' already exists. Open it from the shop list instead of adding it again.');
         }
         $shop = Shop::create(array_filter($d, fn ($v) => $v !== null));
