@@ -16,6 +16,8 @@ Route::prefix('app')->group(function () {
     Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
 
     Route::get('/collections', [CollectionController::class, 'index']);
+    // Public: only category names and claim rules, no staff or distributor data.
+    Route::get('/expense-categories', [ExpenseController::class, 'categories'])->middleware('throttle:60,1');
 
     Route::middleware(['auth:sanctum', 'field.staff', 'throttle:app'])->group(function () {
         Route::get('/session', [AuthController::class, 'session']);
@@ -36,7 +38,6 @@ Route::prefix('app')->group(function () {
         Route::get('/attendance/history', [AttendanceController::class, 'history']);
 
         Route::get('/expenses', [ExpenseController::class, 'index']);
-        Route::get('/expense-categories', [ExpenseController::class, 'categories']);
 
         // Cart (one per shop). Item edits are frequent taps, so they use the normal limit; checkout is a write.
         Route::get('/carts', [CartController::class, 'index']);

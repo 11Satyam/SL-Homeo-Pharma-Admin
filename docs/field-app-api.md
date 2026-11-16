@@ -339,7 +339,7 @@ Your own records, newest first.
 ### `GET /collections?status=collected|verified&shop_id=&from=&to=`
 Collections you recorded.
 
-### `GET /expense-categories`
+### `GET /expense-categories` (public, no token)
 Categories the admin has turned on (Admin → Staff Expenses → Expense categories). Load this before showing the expense form; the same list is also in `/session` as `config.expense_category_options`.
 ```json
 { "data": [

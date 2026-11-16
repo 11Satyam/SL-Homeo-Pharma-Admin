@@ -73,7 +73,7 @@ class ExpenseCategoryTest extends TestCase
         $this->assertNotContains('phone', $res->json('data.*.code'));
 
         $this->app['auth']->forgetGuards();
-        $this->getJson('/api/app/expense-categories')->assertUnauthorized();
+        $this->getJson('/api/app/expense-categories')->assertOk()->assertJsonCount(7, 'data');
     }
 
     public function test_receipt_rule_and_turning_off_hide_it_from_the_app(): void
