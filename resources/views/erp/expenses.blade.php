@@ -5,6 +5,9 @@
 @section('subtitle', 'Claims submitted from the field app. Approved and rejected claims are final.')
 @php($canReview = auth()->user()->hasRole('admin', 'distributor', 'accounts_manager'))
 @php($s = fn ($k, $f) => (float) ($summary[$k]->$f ?? 0))
+@section('actions')
+  @if(auth()->user()->hasRole('admin', 'inventory_manager'))<a href="{{ route('erp.products') }}#manage-categories" class="btn btn-light"><x-icon name="plus" size="sm"/>Add category</a>@endif
+@endsection
 @section('content')
 <div class="row g-3 mb-3">
   <div class="col-sm-4"><x-erp.stat label="Awaiting review" :value="Fmt::money($s('submitted', 'total'), 0)" icon="clock" tone="warn" :meta="(int) $s('submitted', 'n').' claims'" :href="route('erp.expenses', ['status' => 'submitted'])"/></div>
