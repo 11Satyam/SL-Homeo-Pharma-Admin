@@ -97,5 +97,8 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
         Route::post('/distributors/{distributor}/geofence', [E::class, 'setGeofence'])->name('distributors.geofence');
         Route::post('/ledger/{movement}/reverse', [E::class, 'reverseMovement'])->name('ledger.reverse');
         Route::post('/warehouses/{location}/delete', [E::class, 'deleteWarehouse'])->name('warehouses.delete');
+        Route::post('/expenses/categories', [E::class, 'saveExpenseCategory'])->name('expense-categories.store');
+        Route::post('/expenses/categories/{category}', [E::class, 'saveExpenseCategory'])->whereNumber('category')->name('expense-categories.update');
+        Route::post('/expenses/categories/{category}/delete', [E::class, 'deleteExpenseCategory'])->whereNumber('category')->name('expense-categories.delete');
     });
 });

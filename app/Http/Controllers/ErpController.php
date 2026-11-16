@@ -6,6 +6,7 @@ use App\Models\Attendance;
 use App\Models\AuditLog;
 use App\Models\Distributor;
 use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\Invoice;
 use App\Models\Location;
 use App\Models\Order;
@@ -976,7 +977,62 @@ class ErpController extends Controller
 
         return view('erp.expenses', ['expenses' => $this->scoped(Expense::with('user', 'distributor', 'reviewer'))
             ->when($status, fn ($q, $v) => $q->where('status', $v))->latest('id')->paginate(50)->withQueryString(),
+            'catNames' => ExpenseCategory::labels(),
+            'expenseCategories' => auth()->user()->hasRole('admin')
+                ? ExpenseCategory::ordered()->get()->each(fn ($c) => $c->used = Expense::where('category', $c->code)->count()) : collect(),
             'summary' => $this->scoped(Expense::query())->selectRaw('status, count(*) as n, sum(amount) as total')->groupBy('status')->get()->keyBy('status')]);
+    }
+
+    /**
+     * Admin: add or edit a staff expense category. The code is made from the name once and never changes,
+     * so past expenses keep pointing at it. Turning a category off hides it from the field app only.
+     */
+    public function saveExpenseCategory(Request $r, ?ExpenseCategory $category = null)
+    {
+        $d = $r->validate([
+            'name' => 'required|string|max:100', 'max_amount' => 'nullable|numeric|min:1|max:'.config('fieldapp.expenses.max_amount'),
+            'receipt_required' => 'boolean', 'active' => 'boolean',
+        ], ['name.required' => 'Write the category name, for example "Doctor samples".']);
+        $name = trim(preg_replace('/\s+/', ' ', $d['name']));
+        $clash = ExpenseCategory::whereRaw('LOWER(name) = ?', [Str::lower($name)])->when($category, fn ($q) => $q->where('id', '!=', $category->id))->first();
+        if ($clash) {
+            $this->fail('name', "An expense category called \"{$clash->name}\" already exists.");
+        }
+        $fields = ['name' => $name, 'max_amount' => $d['max_amount'] ?? null, 'receipt_required' => $r->boolean('receipt_required')];
+
+        if (! $category) {
+            $code = Str::limit(Str::slug($name, '_'), 36, '') ?: 'category';
+            for ($base = $code, $i = 2; ExpenseCategory::where('code', $code)->exists(); $i++) {
+                $code = $base.'_'.$i;
+            }
+            $c = ExpenseCategory::create($fields + ['code' => $code, 'active' => true]);
+            AuditLog::record('expense_category.created', $c);
+
+            return $this->done("Expense category \"{$name}\" added. Field staff see it the next time the app loads.");
+        }
+        if ($category->code === 'other' && ! $r->boolean('active')) {
+            $this->fail('name', '"Other" cannot be turned off: staff need it for expenses that fit no category.');
+        }
+        $before = $category->only(['name', 'max_amount', 'receipt_required', 'active']);
+        $category->update($fields + ['active' => $r->boolean('active')]);
+        AuditLog::record('expense_category.updated', $category, ['before' => $before]);
+
+        return $this->done("Expense category \"{$name}\" saved.");
+    }
+
+    /** Admin: delete a category no expense uses. A used one can only be turned off, so its expenses keep their label. */
+    public function deleteExpenseCategory(ExpenseCategory $category)
+    {
+        if ($category->code === 'other') {
+            $this->fail('name', '"Other" cannot be deleted.');
+        }
+        if ($n = Expense::where('category', $category->code)->count()) {
+            $this->fail('name', "\"{$category->name}\" is used by {$n} expense(s), so it cannot be deleted. Turn it off instead.");
+        }
+        AuditLog::record('expense_category.deleted', $category, ['name' => $category->name, 'code' => $category->code]);
+        $category->delete();
+
+        return $this->done("Expense category \"{$category->name}\" deleted.");
     }
 
     public function reviewExpense(Request $r, Expense $expense, ExpenseService $svc)

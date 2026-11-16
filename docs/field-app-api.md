@@ -61,6 +61,10 @@ Sign in with **mobile number + password** (recommended for field staff). Admins 
       "payment_methods": ["cash", "upi", "bank_transfer", "cheque", "other"],
       "reference_required_methods": ["upi", "bank_transfer", "cheque"],
       "expense_categories": ["travel", "fuel", "food", "lodging", "phone", "courier", "stationery", "other"],
+      "expense_category_options": [
+        { "code": "fuel", "name": "Fuel", "receipt_required": true, "description_required": false, "max_amount": "2000.00" },
+        { "code": "other", "name": "Other", "receipt_required": false, "description_required": true, "max_amount": null }
+      ],
       "require_check_in": false,
       "geofence": { "configured": true, "mode": "flag", "latitude": 19.1197, "longitude": 72.8464, "radius_m": 300 }
     }
@@ -345,7 +349,8 @@ JSON, or multipart when attaching `receipt` (jpg/png/pdf, at most 5 MB).
   "description": "Bike fuel, Andheri route", "has_receipt": false, "status": "submitted",
   "review_note": null, "reviewed_at": null, "submitted_at": "2026-10-17T15:20:56+05:30" } }
 ```
-* `category` is one of `config.expense_categories`, and `description` is required when the category is `other`. `amount` is at most 100,000. `expense_date` is today or up to 30 days back.
+* Build the category picker from `config.expense_category_options` (from `/session`); the admin adds, renames and turns categories off under Admin → Staff Expenses → Expense categories, so do not hard-code them. Send the `code` as `category`; show `name`.
+* `receipt` is required when the category has `receipt_required: true`; `description` is required when `description_required` (the `other` category). `amount` is at most the category's `max_amount` (when set) and never above 100,000. `expense_date` is today or up to 30 days back.
 * `status` is `submitted` until reviewed in Admin → Staff Expenses (`approved` or `rejected`, with a note). An expense is auto-approved only when `FIELDAPP_EXPENSE_AUTO_APPROVE_UPTO` is set and the amount is at or below it.
 * There is no edit or delete endpoint, so submitted and reviewed expenses cannot be changed from the app.
 

@@ -32,7 +32,7 @@ return [
     ],
 
     'expenses' => [
-        'categories' => ['travel', 'fuel', 'food', 'lodging', 'phone', 'courier', 'stationery', 'other'],
+        // Categories are managed by the admin under Staff Expenses (expense_categories table). This caps every claim.
         'max_amount' => 100000,
         'max_age_days' => 30,
         // Amounts at or below this are auto-approved; null = every expense needs review.
