@@ -296,7 +296,7 @@ Idempotency-Key: 7b1d0c1e-4f7a-4a0e-9a51-2a6f4b9d8c01
 { "data": { "date": "2026-10-17", "status": "checked_in", "record": {
   "id": 1, "date": "2026-10-17", "status": "checked_in",
   "check_in": { "at": "2026-10-17T15:20:56+05:30", "client_at": "2026-10-17T15:20:55+05:30",
-    "location": { "latitude": 19.1199, "longitude": 72.8466, "accuracy_m": 14, "source": "device_reported" },
+    "location": { "latitude": 19.1199, "longitude": 72.8466, "accuracy_m": 14, "source": "device_reported", "address": "SV Road, Andheri West, Mumbai, Maharashtra 400058" },
     "distance_m": 31, "within_geofence": true },
   "check_out": null, "worked_minutes": null, "remarks": null }, "geofence": { "...": "" } } }
 ```
@@ -309,6 +309,7 @@ Rules:
 * One check-in per business day. A second check-in, or a second check-out, returns **409** with the current state. A check-out before check-in returns 422.
 * `at` is server time; `client_at` is stored only for audit.
 * Coordinates are reported as `"source": "device_reported"`. The server does not treat them as verified presence.
+* `location.address` is a place name looked up from the coordinates (OpenStreetMap) just after the response, so it is `null` in the check-in reply and filled in later reads (`/attendance/today`, `/attendance/history`).
 * Geofence (set per distributor in Admin → Distributors). Mode comes from `FIELDAPP_GEOFENCE_MODE`:
   `off` ignores it; `flag` (the default) records `within_geofence` and `distance_m`; `enforce` returns 422 when outside the radius, or when `accuracy_m` is coarser than `FIELDAPP_MAX_ACCURACY_M` (if set). With no geofence configured, both fields are `null`.
 * The app must ask for location permission and tell the user why before reading GPS.

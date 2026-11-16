@@ -22,6 +22,9 @@ return [
         'max_accuracy_m' => env('FIELDAPP_MAX_ACCURACY_M') !== null ? (int) env('FIELDAPP_MAX_ACCURACY_M') : null,
         // When true, orders and collections require an open check-in today.
         'require_check_in' => (bool) env('FIELDAPP_REQUIRE_CHECK_IN', false),
+        // Show a place name instead of raw coordinates (OpenStreetMap reverse geocoding, free, no key).
+        'geocode' => (bool) env('FIELDAPP_GEOCODE', true),
+        'geocode_url' => env('FIELDAPP_GEOCODE_URL', 'https://nominatim.openstreetmap.org/reverse'),
     ],
 
     'collections' => [

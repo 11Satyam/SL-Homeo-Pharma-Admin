@@ -32,7 +32,9 @@
             <b class="num">{{ $a->{$p.'_at'}->setTimezone($tz)->format('H:i') }}</b>
             @php($fence = $a->{$p.'_within_geofence'})
             @if($fence === true)<span class="badge-s ok ms-1"><span class="dot"></span>Inside</span>@elseif($fence === false)<span class="badge-s bad ms-1" data-tip="Outside geofence|{{ Fmt::num($a->{$p.'_distance_m'}) }} m from office"><span class="dot"></span>{{ Fmt::num($a->{$p.'_distance_m'}) }} m out</span>@endif
-            <span class="cell-sub"><a href="https://maps.google.com/?q={{ $a->{$p.'_lat'} }},{{ $a->{$p.'_lng'} }}" target="_blank" rel="noopener"><x-icon name="pin" size="sm"/>{{ round($a->{$p.'_lat'}, 5) }}, {{ round($a->{$p.'_lng'}, 5) }}</a>@if($a->{$p.'_accuracy_m'} !== null) ±{{ round($a->{$p.'_accuracy_m'}) }} m @endif</span>
+            @php($coords = round($a->{$p.'_lat'}, 5).', '.round($a->{$p.'_lng'}, 5))
+            @php($place = $a->{$p.'_address'})
+            <span class="cell-sub" style="max-width:260px;white-space:normal"><a href="https://maps.google.com/?q={{ $a->{$p.'_lat'} }},{{ $a->{$p.'_lng'} }}" target="_blank" rel="noopener" title="{{ $coords }} · open in Google Maps"><x-icon name="pin" size="sm"/>{{ $place ?: $coords }}</a>@if($a->{$p.'_accuracy_m'} !== null) <span class="text-nowrap">±{{ round($a->{$p.'_accuracy_m'}) }} m</span>@endif</span>
           @else<span class="text-muted">—</span>@endif</td>
         @endforeach
         <td class="text-end num">{{ $a->check_out_at ? number_format($a->check_in_at->diffInMinutes($a->check_out_at) / 60, 1) : '—' }}</td>

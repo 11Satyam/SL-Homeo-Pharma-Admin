@@ -11,6 +11,8 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
+use function Illuminate\Support\defer;
+
 /**
  * Check-in/out against the server clock. Device coordinates are stored as reported
  * and compared to the distributor's geofence when one is configured; they are never
@@ -39,8 +41,18 @@ class AttendanceService
             throw new AttendanceConflict('You have already checked in today.', $this->today($u));
         }
         AuditLog::record('attendance.check_in', $a, ['within_geofence' => $within]);
+        $this->lookUpAddress($a);
 
         return $a;
+    }
+
+    /** Find the place name after the response is sent, so a slow map service never delays the app. */
+    private function lookUpAddress(Attendance $a): void
+    {
+        $geo = app(Geocoder::class);
+        if ($geo->enabled()) {
+            defer(fn () => $geo->fill($a->fresh()));
+        }
     }
 
     /** @throws AttendanceConflict when already checked out today */
@@ -58,6 +70,7 @@ class AttendanceService
             $a->update(['status' => 'checked_out', 'remarks' => $d['remarks'] ?? $a->remarks]
                 + $this->fields('check_out', $d, $distance, $within));
             AuditLog::record('attendance.check_out', $a, ['within_geofence' => $within]);
+            $this->lookUpAddress($a);
 
             return $a;
         });

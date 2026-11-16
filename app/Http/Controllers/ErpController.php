@@ -967,7 +967,21 @@ class ErpController extends Controller
             ->when($d['user_id'] ?? null, fn ($q, $v) => $q->where('user_id', $v))
             ->orderByDesc('date')->orderBy('user_id');
 
-        return view('erp.attendance', ['rows' => $q->paginate(50)->withQueryString(),
+        $rows = $q->paginate(50)->withQueryString();
+        // Older rows (or a lookup that failed after check-in) get their place name now, a few per visit
+        // to stay inside the free map service's limit. `php artisan attendance:addresses` fills the rest.
+        $geo = app(\App\Services\Geocoder::class);
+        if ($geo->enabled()) {
+            $budget = 6;
+            foreach ($rows as $a) {
+                if ($budget <= 0) {
+                    break;
+                }
+                $budget -= $geo->fill($a);
+            }
+        }
+
+        return view('erp.attendance', ['rows' => $rows,
             'staff' => $this->scoped(User::where('role', 'staff'))->orderBy('name')->get()]);
     }
 

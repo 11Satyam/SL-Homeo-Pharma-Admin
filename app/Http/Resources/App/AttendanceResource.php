@@ -13,6 +13,7 @@ class AttendanceResource extends ApiResource
                 'latitude' => (float) $this->{$p.'_lat'}, 'longitude' => (float) $this->{$p.'_lng'},
                 'accuracy_m' => $this->{$p.'_accuracy_m'} !== null ? (float) $this->{$p.'_accuracy_m'} : null,
                 'source' => 'device_reported',
+                'address' => $this->{$p.'_address'}, // place name from the map service; null until looked up
             ],
             'distance_m' => $this->{$p.'_distance_m'}, 'within_geofence' => $this->{$p.'_within_geofence'},
         ] : null;
