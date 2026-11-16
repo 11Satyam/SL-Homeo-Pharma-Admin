@@ -72,7 +72,10 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     });
     Route::middleware('role:inventory_manager')->group(function () {
         Route::post('/products', [E::class, 'saveProduct'])->name('products.store');
-        Route::post('/products/{product}', [E::class, 'saveProduct'])->name('products.update');
+        Route::post('/products/categories', [E::class, 'saveCategory'])->name('categories.store');
+        Route::post('/products/categories/{category}', [E::class, 'saveCategory'])->whereNumber('category')->name('categories.update');
+        Route::post('/products/categories/{category}/delete', [E::class, 'deleteCategory'])->whereNumber('category')->name('categories.delete');
+        Route::post('/products/{product}', [E::class, 'saveProduct'])->whereNumber('product')->name('products.update');
         Route::post('/warehouses', [E::class, 'saveWarehouse'])->name('warehouses.store');
         Route::post('/stock/receive', [E::class, 'receiveStock'])->name('stock.receive');
         Route::post('/stock/adjust', [E::class, 'adjustStock'])->name('stock.adjust');

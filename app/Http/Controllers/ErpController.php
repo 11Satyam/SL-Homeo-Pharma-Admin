@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Models\OrderLine;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Shop;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
@@ -202,7 +203,8 @@ class ErpController extends Controller
             ->orderBy('name');
 
         return view('erp.products', ['products' => $q->paginate(25)->withQueryString(),
-            'categories' => Product::whereNotNull('category')->distinct()->orderBy('category')->pluck('category'),
+            'categories' => ProductCategory::orderBy('name')->pluck('name'),
+            'categoryList' => ProductCategory::withCount('products')->orderBy('name')->get(),
             'counts' => ['all' => Product::count(), 'active' => Product::where('active', true)->count(), 'inactive' => Product::where('active', false)->count()]]);
     }
 
@@ -210,10 +212,11 @@ class ErpController extends Controller
     {
         $data = $r->validate([
             'name' => 'required|max:255', 'sku' => ['required', 'max:64', Rule::unique('products')->ignore($product?->id)],
-            'category' => 'nullable|max:100', 'unit' => 'required|max:20', 'cost_price' => 'required|numeric|min:0',
+            'category' => ['nullable', 'max:100', Rule::exists('product_categories', 'name')], 'unit' => 'required|max:20', 'cost_price' => 'required|numeric|min:0',
             'selling_price' => 'required|numeric|min:0', 'tax_rate' => 'required|numeric|between:0,100',
             'reorder_level' => 'required|integer|min:0', 'active' => 'boolean',
-        ], ['sku.unique' => 'Another product already uses this code (SKU). Each product needs its own code.']);
+        ], ['sku.unique' => 'Another product already uses this code (SKU). Each product needs its own code.',
+            'category.exists' => 'Choose a category from the list. Add new ones from "Categories" on the Products page.']);
         $product = $product ?? new Product;
         $before = $product->getOriginal();
         $product->fill($data + ['active' => $r->boolean('active')])->save();
@@ -222,6 +225,48 @@ class ErpController extends Controller
         return $before
             ? $this->done("Product \"{$product->name}\" updated. New orders use the new price; existing invoices keep theirs.")
             : $this->done("Product \"{$product->name}\" added.", [['Receive stock for it', route('erp.stock', ['new' => 1, 'product' => $product->id])], ['Add another product', route('erp.products', ['new' => 1])]]);
+    }
+
+    /** Add a category, or rename one (its products move with it). Names are unique ignoring case. */
+    public function saveCategory(Request $r, ?ProductCategory $category = null)
+    {
+        $name = trim(preg_replace('/\s+/', ' ', (string) $r->validate(['name' => 'required|string|max:100'],
+            ['name.required' => 'Write the category name, for example "Syrup".'])['name']));
+        $clash = ProductCategory::whereRaw('LOWER(name) = ?', [Str::lower($name)])->when($category, fn ($q) => $q->where('id', '!=', $category->id))->first();
+        if ($clash) {
+            $this->fail('name', "A category called \"{$clash->name}\" already exists.");
+        }
+        if (! $category) {
+            $c = ProductCategory::create(['name' => $name]);
+            AuditLog::record('category.created', $c);
+
+            return $this->done("Category \"{$name}\" added. You can now pick it when adding or editing a product.");
+        }
+        $old = $category->name;
+        if ($old === $name) {
+            return $this->done('No change: the name is the same.');
+        }
+        $moved = DB::transaction(function () use ($category, $old, $name) {
+            $category->update(['name' => $name]);
+
+            return Product::where('category', $old)->update(['category' => $name]);
+        });
+        AuditLog::record('category.renamed', $category, ['before' => $old, 'products' => $moved]);
+
+        return $this->done("Category \"{$old}\" renamed to \"{$name}\"".($moved ? " and {$moved} product(s) updated." : '.'));
+    }
+
+    /** Only a category no product uses can be deleted; move its products to another category first. */
+    public function deleteCategory(ProductCategory $category)
+    {
+        $used = Product::where('category', $category->name)->count();
+        if ($used) {
+            $this->fail('name', "\"{$category->name}\" is used by {$used} product(s). Move them to another category first.");
+        }
+        AuditLog::record('category.deleted', $category, ['name' => $category->name]);
+        $category->delete();
+
+        return $this->done("Category \"{$category->name}\" deleted.");
     }
 
     // ---------- Stock / warehouses / ledger ----------

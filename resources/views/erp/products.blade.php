@@ -6,6 +6,7 @@
 @php($canEdit = auth()->user()->hasRole('admin', 'inventory_manager'))
 @php($units = ['pcs', 'box', 'carton', 'pack', 'strip', 'bottle', 'tube', 'vial'])
 @section('actions')
+  @if($canEdit)<button type="button" class="btn btn-light" data-open="manage-categories"><x-icon name="filter" size="sm"/>Categories</button>@endif
   @if($canEdit)<button type="button" class="btn btn-primary" data-open="add-product"><x-icon name="plus" size="sm"/>Add product</button>@endif
 @endsection
 @section('content')
@@ -67,7 +68,13 @@
       <div class="row g-3">
         <x-erp.field :form="$id" class="col-md-6" name="name" label="Product name" required maxlength="255" :value="$val('name')" placeholder="e.g. Paracetamol 500mg (10 tabs)"/>
         <x-erp.field :form="$id" class="col-md-3" name="sku" label="SKU" required maxlength="64" :value="$val('sku')" placeholder="PCM500"/>
-        <x-erp.field :form="$id" class="col-md-3" name="category" label="Category" maxlength="100" :value="$val('category')" list="cat-list"/>
+        @php($cat = $val('category'))
+        <x-erp.field :form="$id" class="col-md-3" name="category" label="Category" :id="$id.'-cat'" help="New one? Add it from Categories above.">
+          <select name="category" class="form-select" id="{{ $id }}-cat">
+            <option value="">— None —</option>
+            @foreach($categories as $c)<option @selected($cat === $c)>{{ $c }}</option>@endforeach
+          </select>
+        </x-erp.field>
         <x-erp.field :form="$id" class="col-md-3" name="unit" label="Unit" required :id="$id.'-unit'">
           <select name="unit" class="form-select" id="{{ $id }}-unit">@foreach($units as $x)<option @selected($val('unit', 'strip') === $x)>{{ $x }}</option>@endforeach</select>
         </x-erp.field>
@@ -84,6 +91,47 @@
       </div>
     </x-erp.modal>
   @endforeach
-  <datalist id="cat-list">@foreach($categories as $c)<option value="{{ $c }}">@endforeach</datalist>
+  @php($catForm = old('_form') === 'manage-categories')
+  <dialog id="manage-categories" class="modal-x" aria-labelledby="manage-categories-t" @if($catForm) data-autoshow @endif>
+    <div class="dlg-head">
+      <div><h2 id="manage-categories-t">Product categories</h2><p>The list shown in the product form, the Products filter and the field app. Renaming a category updates its products too.</p></div>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><x-icon name="x"/></button>
+    </div>
+    <div class="dlg-body">
+      @if($catForm && $errors->any())
+        <div class="alert alert-danger mb-3" role="alert"><x-icon name="alert" size="sm"/><div>@foreach($errors->all() as $e)<div>{{ $e }}</div>@endforeach</div></div>
+      @endif
+      <form method="post" action="{{ route('erp.categories.store') }}" class="d-flex gap-2 mb-3">@csrf
+        <input type="hidden" name="_form" value="manage-categories">
+        <input name="name" class="form-control" required maxlength="100" placeholder="New category, e.g. Syrup" aria-label="New category name" value="{{ $catForm && ! old('_cat') ? old('name') : '' }}">
+        <button class="btn btn-primary text-nowrap"><x-icon name="plus" size="sm"/>Add</button>
+      </form>
+      @if($categoryList->isEmpty())
+        <p class="text-muted mb-0">No categories yet. Add the first one above.</p>
+      @else
+      <table class="table mb-0"><thead><tr><th>Name</th><th class="text-end">Products</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+      @foreach($categoryList as $c)
+        <tr>
+          <td>
+            <form method="post" action="{{ route('erp.categories.update', $c) }}" class="d-flex gap-2" id="cat-{{ $c->id }}">@csrf
+              <input type="hidden" name="_form" value="manage-categories"><input type="hidden" name="_cat" value="{{ $c->id }}">
+              <input name="name" class="form-control form-control-sm" required maxlength="100" aria-label="Rename {{ $c->name }}" value="{{ $catForm && old('_cat') == $c->id ? old('name') : $c->name }}">
+              <button class="btn btn-sm btn-light">Rename</button>
+            </form>
+          </td>
+          <td class="text-end num">{{ $c->products_count }}</td>
+          <td class="text-end">
+            <form method="post" action="{{ route('erp.categories.delete', $c) }}" data-confirm="Delete category &quot;{{ $c->name }}&quot;?" data-confirm-ok="Delete" data-tone="danger">@csrf
+              <input type="hidden" name="_form" value="manage-categories">
+              <button class="btn btn-sm btn-outline-danger" @disabled($c->products_count > 0) @if($c->products_count) data-tip="Used by {{ $c->products_count }} product(s)|Move them to another category first" @endif>Delete</button>
+            </form>
+          </td>
+        </tr>
+      @endforeach
+      </tbody></table>
+      @endif
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn btn-light" data-close>Close</button></div>
+  </dialog>
 @endif
 @endsection

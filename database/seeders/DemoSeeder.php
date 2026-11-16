@@ -152,6 +152,9 @@ class DemoSeeder extends Seeder
         $this->as($this->inventory);
         $wm = Location::create(['name' => 'Mumbai Central Warehouse', 'type' => 'warehouse']);
         $wp = Location::create(['name' => 'Pune Warehouse', 'type' => 'warehouse']);
+        foreach (collect($rows)->pluck(2)->push('Cough & cold')->unique() as $cat) {
+            \App\Models\ProductCategory::firstOrCreate(['name' => $cat]);
+        }
         $products = [];
         foreach ($rows as $i => [$name, $sku, $cat, $unit, $price, $gst, $reorder, $openM, $openP]) {
             $p = Product::create(['name' => $name, 'sku' => $sku, 'category' => $cat, 'unit' => $unit, 'selling_price' => $price,
