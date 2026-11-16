@@ -339,6 +339,19 @@ Your own records, newest first.
 ### `GET /collections?status=collected|verified&shop_id=&from=&to=`
 Collections you recorded.
 
+### `GET /expense-categories`
+Categories the admin has turned on (Admin → Staff Expenses → Expense categories). Load this before showing the expense form; the same list is also in `/session` as `config.expense_category_options`.
+```json
+{ "data": [
+    { "code": "fuel", "name": "Fuel", "receipt_required": true, "description_required": false, "max_amount": "2000.00" },
+    { "code": "food", "name": "Food", "receipt_required": false, "description_required": false, "max_amount": null },
+    { "code": "other", "name": "Other", "receipt_required": false, "description_required": true, "max_amount": null }
+  ],
+  "meta": { "max_amount": "100000.00", "max_age_days": 30 } }
+```
+* Send `code` as `category` in `POST /expenses`; show `name`. A code never changes, even when the admin renames the category.
+* `max_amount: null` means only the overall `meta.max_amount` cap applies.
+
 ### `POST /expenses` (requires `Idempotency-Key`)
 JSON, or multipart when attaching `receipt` (jpg/png/pdf, at most 5 MB).
 ```json

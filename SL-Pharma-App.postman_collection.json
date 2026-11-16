@@ -553,6 +553,18 @@
       "name": "Expenses",
       "item": [
         {
+          "name": "List Expense Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/app/expense-categories", "host": ["{{base_url}}"], "path": ["api", "app", "expense-categories"] },
+            "description": "Categories the admin has turned on. Send `code` as `category` when submitting an expense; show `name`. receipt_required → attach a receipt; description_required → description is mandatory; max_amount → per-claim limit (null = only the global 100,000 cap)."
+          }
+        },
+        {
           "name": "List Expenses",
           "request": {
             "method": "GET",

@@ -36,6 +36,7 @@ Route::prefix('app')->group(function () {
         Route::get('/attendance/history', [AttendanceController::class, 'history']);
 
         Route::get('/expenses', [ExpenseController::class, 'index']);
+        Route::get('/expense-categories', [ExpenseController::class, 'categories']);
 
         // Cart (one per shop). Item edits are frequent taps, so they use the normal limit; checkout is a write.
         Route::get('/carts', [CartController::class, 'index']);

@@ -29,6 +29,14 @@ class ExpenseController extends FieldController
         return ExpenseResource::collection($q->paginate($p['per_page'] ?? 20)->withQueryString());
     }
 
+    /** Categories staff can choose now (admin-managed), with the rules the server enforces on submit. */
+    public function categories()
+    {
+        return response()->json(['data' => ExpenseCategory::choosable()->map->forApp()->values(),
+            'meta' => ['max_amount' => number_format((float) config('fieldapp.expenses.max_amount'), 2, '.', ''),
+                'max_age_days' => (int) config('fieldapp.expenses.max_age_days')]]);
+    }
+
     /** JSON or multipart/form-data (multipart when attaching a receipt). */
     public function store(Request $r)
     {

@@ -62,6 +62,20 @@ class ExpenseCategoryTest extends TestCase
         $this->assertDatabaseHas('expenses', ['category' => 'doctor_samples']);
     }
 
+    public function test_the_app_lists_only_categories_that_are_on(): void
+    {
+        ExpenseCategory::where('code', 'fuel')->update(['receipt_required' => true, 'max_amount' => 2000]);
+        ExpenseCategory::where('code', 'phone')->update(['active' => false]);
+        $res = $this->getJson('/api/app/expense-categories', ['Authorization' => 'Bearer '.$this->token])->assertOk()
+            ->assertJsonCount(7, 'data')->assertJsonPath('data.6.code', 'other')->assertJsonPath('data.6.description_required', true)
+            ->assertJsonPath('meta.max_amount', '100000.00')->assertJsonPath('meta.max_age_days', 30)
+            ->assertJsonFragment(['code' => 'fuel', 'name' => 'Fuel', 'receipt_required' => true, 'description_required' => false, 'max_amount' => '2000.00']);
+        $this->assertNotContains('phone', $res->json('data.*.code'));
+
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/app/expense-categories')->assertUnauthorized();
+    }
+
     public function test_receipt_rule_and_turning_off_hide_it_from_the_app(): void
     {
         Storage::fake('local');
