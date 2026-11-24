@@ -37,6 +37,7 @@ Route::prefix('erp')->name('erp.')->middleware(['auth', 'role'])->group(function
     Route::get('/stock', [E::class, 'stock'])->name('stock');
     Route::get('/ledger', [E::class, 'ledger'])->name('ledger');
     Route::get('/transfers', [E::class, 'transfers'])->name('transfers');
+    Route::get('/transfers/{transfer}/invoice', [E::class, 'transferInvoice'])->whereNumber('transfer')->name('transfers.invoice');
     Route::post('/transfers/{transfer}/{action}', [E::class, 'transferAction'])->whereIn('action', ['approve', 'dispatch', 'receive'])->name('transfers.action');
     Route::get('/shops', [E::class, 'shops'])->name('shops');
     Route::get('/shops/{shop}', [E::class, 'shop'])->name('shop');

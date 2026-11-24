@@ -45,6 +45,7 @@
         </td>
         <td><x-erp.status :value="$t->status"/></td>
         <td class="actions">
+          <a href="{{ route('erp.transfers.invoice', $t) }}" class="btn btn-sm btn-light" data-tip="Transfer invoice {{ $t->invoiceNumber() }}" aria-label="Transfer invoice {{ $t->invoiceNumber() }}"><x-icon name="receipt" size="sm"/>Invoice</a>
           @if($t->status === 'draft' && $u->hasRole('admin'))
             <form method="post" action="{{ route('erp.transfers.action', [$t, 'approve']) }}" class="d-inline" data-confirm="Approve {{ $t->number }} for dispatch? No stock moves until it is dispatched." data-confirm-ok="Approve">@csrf<button class="btn btn-sm btn-success"><x-icon name="check" size="sm"/>Approve</button></form>
           @elseif($t->status === 'approved' && $u->hasRole('admin', 'inventory_manager'))
@@ -56,8 +57,11 @@
       </tr>
       <tr class="subrow" id="tr-{{ $t->id }}" hidden><td colspan="7">
         <div class="p-3"><table class="table table-sm mb-0" style="background:var(--surface);border-radius:8px">
-          <thead><tr><th>Product</th><th class="text-end">Dispatched</th><th class="text-end">Received</th><th class="text-end">Damaged</th><th class="text-end">Pending</th></tr></thead>
-          <tbody>@foreach($t->lines as $l)<tr><td>{{ $l->product->name }}</td><td class="text-end num">{{ $l->qty }}</td><td class="text-end num">{{ $l->received_qty }}</td><td class="text-end num">{{ $l->damaged_qty }}</td><td class="text-end num fw-semibold">{{ $l->qty - $l->received_qty - $l->damaged_qty }}</td></tr>@endforeach</tbody>
+          <thead><tr><th>Product</th><th class="text-end">Dispatched</th><th class="text-end">Received</th><th class="text-end">Damaged</th><th class="text-end">Pending</th><th class="text-end">Rate</th><th class="text-end">Disc.</th><th class="text-end">Amount</th></tr></thead>
+          <tbody>@foreach($t->lines as $l)@php($a = $l->totals())<tr><td>{{ $l->product->name }}</td><td class="text-end num">{{ $l->qty }}</td><td class="text-end num">{{ $l->received_qty }}</td><td class="text-end num">{{ $l->damaged_qty }}</td><td class="text-end num fw-semibold">{{ $l->qty - $l->received_qty - $l->damaged_qty }}</td>
+            <td class="text-end num">{{ Fmt::money($l->unit_price) }}</td><td class="text-end num">{{ (float) $l->discount_pct ? (float) $l->discount_pct.'%' : '—' }}</td><td class="text-end num">{{ Fmt::money($a['total']) }}</td></tr>@endforeach</tbody>
+          @php($tt = $t->totals())
+          <tfoot><tr><td colspan="5" class="text-muted small">Subtotal {{ Fmt::money($tt['gross']) }} · Discount − {{ Fmt::money($tt['discount']) }} · GST {{ Fmt::money($tt['tax']) }}</td><td colspan="3" class="text-end fw-semibold num">Total {{ Fmt::money($tt['total']) }}</td></tr></tfoot>
         </table></div>
       </td></tr>
     @endforeach
@@ -93,7 +97,8 @@
   <x-erp.modal id="new-transfer" title="New transfer" subtitle="Saved as a draft. An admin approves it before dispatch." :action="route('erp.transfers.store')" submit="Create draft" size="wide">
     <div class="row g-3 mb-3">
       <x-erp.field form="new-transfer" class="col-md-4" name="from_location_id" label="From" required id="nt-from">
-        <select id="nt-from" name="from_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected((old('from_location_id') ?? request('from')) == $l->id)>{{ $l->name }} · {{ Fmt::label($l->type) }}{{ $l->distributor?->status === 'inactive' ? ' (inactive)' : '' }}</option>@endforeach</select>
+        {{-- Transfers always leave from Main Warehouse: the only option, fixed. --}}
+        <select id="nt-from" name="from_location_id" class="form-select" aria-readonly="true" tabindex="-1" style="pointer-events:none;background-color:var(--surface-2)">@if($main)<option value="{{ $main->id }}" selected>{{ $main->name }} · {{ Fmt::label($main->type) }}</option>@endif</select>
       </x-erp.field>
       <x-erp.field form="new-transfer" class="col-md-4" name="to_location_id" label="To" required id="nt-to">
         <select id="nt-to" name="to_location_id" class="form-select">@foreach($locations as $l)<option value="{{ $l->id }}" @selected(old('to_location_id') || request('to') ? (old('to_location_id') ?? request('to')) == $l->id : $l->type === 'distributor')>{{ $l->name }} · {{ Fmt::label($l->type) }}{{ $l->distributor?->status === 'inactive' ? ' (inactive)' : '' }}</option>@endforeach</select>
@@ -104,17 +109,29 @@
       <input type="hidden" name="approve_now" value="0">
       <label class="form-check mb-3"><input class="form-check-input" type="checkbox" name="approve_now" value="1" @checked(old('_form') === 'new-transfer' ? old('approve_now') : true)> <span class="form-check-label">Approve now (I am an admin) — skips the separate approval step</span></label>
     @endif
-    <div class="d-flex justify-content-between align-items-end mb-2"><div class="form-section mb-0">Quantities</div>
+    @unless($main)
+      <div class="alert alert-warning mb-3" role="alert"><b>No warehouse yet.</b> Transfers are sent from Main Warehouse. <a href="{{ route('erp.stock') }}">Create a warehouse</a> first.</div>
+    @endunless
+    <div class="d-flex justify-content-between align-items-end mb-2"><div class="form-section mb-0">Quantities &amp; discounts</div>
       <div class="search-input" style="width:220px"><x-icon name="search" size="sm"/><input class="form-control form-control-sm" placeholder="Find product…" oninput="const q=this.value.toLowerCase();this.closest('.dlg-body').querySelectorAll('.qty-item').forEach(i=>i.hidden=!i.textContent.toLowerCase().includes(q))" aria-label="Find product"></div></div>
     <div class="qty-grid">
       @foreach($products as $p)
         <label class="qty-item"><span class="info"><b>{{ $p->name }}</b><span class="mono">{{ $p->sku }} · {{ $p->unit }}</span>
-            <span class="avail" data-avail></span><span class="line-total" data-dest></span></span>
-          <input name="lines[{{ $p->id }}]" type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm" placeholder="0" data-product="{{ $p->id }}" value="{{ old('_form') === 'new-transfer' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity"></label>
+            <span class="rate">{{ Fmt::money($p->selling_price) }}@if((float) $p->tax_rate) · GST {{ (float) $p->tax_rate }}%@endif</span>
+            <span class="avail" data-avail></span><span class="line-total" data-dest></span><span class="amt" data-amt></span></span>
+          <span class="qty-inputs">
+            <input name="lines[{{ $p->id }}]" type="number" min="0" step="1" inputmode="numeric" class="form-control form-control-sm" placeholder="Qty" data-product="{{ $p->id }}" data-price="{{ (float) $p->selling_price }}" data-tax="{{ (float) $p->tax_rate }}" value="{{ old('_form') === 'new-transfer' ? old('lines.'.$p->id) : '' }}" aria-label="{{ $p->name }} quantity">
+            <span class="disc"><input name="discounts[{{ $p->id }}]" type="number" min="0" max="100" step="0.01" inputmode="decimal" class="form-control form-control-sm" placeholder="0" data-discount value="{{ old('_form') === 'new-transfer' ? old('discounts.'.$p->id) : '' }}" aria-label="{{ $p->name }} discount percent"><i>%</i></span>
+          </span></label>
       @endforeach
     </div>
     <script type="application/json" data-transfer-stock data-url="{{ route('erp.transfers.stock') }}">@json(['stock' => (object) $locationStock->all(), 'at' => now()->toIso8601String()])</script>
     <div class="live-stock mt-2" data-stock-live><span class="dot"></span><span data-stock-at>Live stock</span></div>
+    <div class="order-sum mt-3" data-transfer-sum>
+      <div><span class="text-muted" data-tsum-count>0 products</span><span class="cell-sub">Discount is applied per product, before GST.</span></div>
+      <div class="sum-figs"><span>Subtotal <b data-tsum-gross>₹0.00</b></span><span>Discount <b data-tsum-disc>− ₹0.00</b></span><span>GST <b data-tsum-tax>₹0.00</b></span>
+        <span>Total <b class="fs-5 ms-1" data-tsum-total>₹0.00</b></span></div>
+    </div>
     <div class="alert alert-warning mt-3 mb-0" role="alert" data-stock-help hidden><b>Not enough stock at the source</b><ul class="mb-0 mt-1 ps-3" data-stock-list></ul></div>
   </x-erp.modal>
 @endif

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Location;
+use App\Models\Product;
 use App\Models\Transfer;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -13,21 +14,27 @@ class TransferService
 {
     public function __construct(private StockService $stock) {}
 
-    public function create(Location $from, Location $to, array $lines, ?string $remarks = null): Transfer
+    /**
+     * $lines: [product_id => qty]. $discounts: [product_id => discount %, 0–100]. Rate and GST are snapshotted
+     * from the product master; the client never sets a price.
+     */
+    public function create(Location $from, Location $to, array $lines, ?string $remarks = null, array $discounts = []): Transfer
     {
         if ($from->id === $to->id) {
             throw new RuntimeException('Source and destination must differ.');
         }
 
-        return DB::transaction(function () use ($from, $to, $lines, $remarks) {
+        return DB::transaction(function () use ($from, $to, $lines, $remarks, $discounts) {
             $t = Transfer::create([
                 'number' => 'TR-'.now()->format('ymd').'-'.strtoupper(substr(uniqid(), -5)),
                 'from_location_id' => $from->id, 'to_location_id' => $to->id,
                 'remarks' => $remarks, 'created_by' => auth()->id(), 'status' => 'draft',
             ]);
+            $products = Product::whereIn('id', array_keys($lines))->get()->keyBy('id');
             foreach ($lines as $productId => $qty) {
-                if ((int) $qty > 0) {
-                    $t->lines()->create(['product_id' => $productId, 'qty' => (int) $qty]);
+                if ((int) $qty > 0 && ($p = $products->get($productId))) {
+                    $t->lines()->create(['product_id' => $p->id, 'qty' => (int) $qty, 'unit_price' => $p->selling_price, 'tax_rate' => $p->tax_rate,
+                        'discount_pct' => round(min(100, max(0, (float) ($discounts[$productId] ?? 0))), 2)]);
                 }
             }
             if (! $t->lines()->exists()) {

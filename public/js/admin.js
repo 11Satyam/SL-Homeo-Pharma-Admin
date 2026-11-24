@@ -271,7 +271,30 @@
       list.textContent = '';
       short.forEach(function (t) { var li = d.createElement('li'); li.textContent = t; list.appendChild(li); });
       help.hidden = !short.length;
-      if (submit) submit.disabled = short.length > 0;
+      if (submit) submit.disabled = short.length > 0 || !from.value;
+      totals();
+    };
+    /* Same formula as TransferLine::amounts(): gross = rate x qty, discount % on gross, GST on the discounted value. */
+    var r2 = function (x) { return Math.round((x + Number.EPSILON) * 100) / 100; };
+    var inr = function (x) { return '₹' + x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var sum = $('[data-transfer-sum]', form);
+    var totals = function () {
+      var t = { gross: 0, disc: 0, tax: 0, total: 0, n: 0, units: 0 };
+      inputs.forEach(function (i) {
+        var item = i.closest('.qty-item'), q = parseInt(i.value, 10) || 0, dIn = $('input[data-discount]', item), amt = $('[data-amt]', item);
+        var pct = Math.min(100, Math.max(0, parseFloat(dIn && dIn.value) || 0));
+        if (dIn) dIn.setCustomValidity(dIn.value !== '' && (isNaN(parseFloat(dIn.value)) || dIn.value < 0 || dIn.value > 100) ? 'Discount must be between 0 and 100%.' : '');
+        if (q <= 0) { if (amt) amt.textContent = ''; return; }
+        var gross = r2((parseFloat(i.dataset.price) || 0) * q), disc = r2(gross * pct / 100), taxable = r2(gross - disc), tax = r2(taxable * (parseFloat(i.dataset.tax) || 0) / 100);
+        t.gross = r2(t.gross + gross); t.disc = r2(t.disc + disc); t.tax = r2(t.tax + tax); t.total = r2(t.total + taxable + tax); t.n++; t.units += q;
+        if (amt) amt.textContent = inr(r2(taxable + tax)) + (disc > 0 ? ' after ' + pct + '% off' : '');
+      });
+      if (!sum) return;
+      $('[data-tsum-count]', sum).textContent = t.n + (t.n === 1 ? ' product' : ' products') + (t.units ? ' · ' + t.units + ' units' : '');
+      $('[data-tsum-gross]', sum).textContent = inr(t.gross);
+      $('[data-tsum-disc]', sum).textContent = '− ' + inr(t.disc);
+      $('[data-tsum-tax]', sum).textContent = inr(t.tax);
+      $('[data-tsum-total]', sum).textContent = inr(t.total);
     };
     var load = function (sel) {
       var id = sel.value;

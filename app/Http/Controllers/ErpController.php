@@ -574,14 +574,17 @@ class ErpController extends Controller
     public function transfers(Request $r)
     {
         $status = $r->validate(['status' => 'nullable|in:draft,approved,in_transit,partially_received,received'])['status'] ?? null;
-        $locations = $this->transferLocations();
+        $main = Location::mainWarehouse();
+        // Transfers always leave from Main Warehouse, so it is never offered as a destination.
+        $locations = $this->transferLocations()->reject(fn ($l) => $l->id === $main?->id)->values();
 
         return view('erp.transfers', [
             'transfers' => $this->scopedTransfers()->with('from', 'to', 'lines.product')
                 ->when($status, fn ($q, $s) => $q->where('status', $s))->latest('id')->paginate(25)->withQueryString(),
             'statusCounts' => $this->scopedTransfers()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status'),
+            'main' => $main,
             'locations' => $locations,
-            'locationStock' => $this->locationStock($locations->pluck('id')->all()),
+            'locationStock' => $this->locationStock($locations->pluck('id')->push($main?->id)->filter()->all()),
             'products' => Product::where('active', true)->orderBy('name')->get(),
         ]);
     }
@@ -621,7 +624,16 @@ class ErpController extends Controller
         $d = $r->validate([
             'from_location_id' => ['required', $active()], 'to_location_id' => ['required', $active()],
             'lines' => 'required|array', 'lines.*' => 'nullable|integer|min:0', 'remarks' => 'nullable|max:255',
-        ], ['lines.required' => 'Enter a quantity for at least one product.']);
+            'discounts' => 'nullable|array', 'discounts.*' => 'nullable|numeric|min:0|max:100',
+        ], ['lines.required' => 'Enter a quantity for at least one product.',
+            'discounts.*.numeric' => 'Discount must be a number.', 'discounts.*.min' => 'Discount cannot be negative.', 'discounts.*.max' => 'Discount cannot be more than 100%.']);
+        $main = Location::mainWarehouse();
+        if (! $main) {
+            $this->fail('from_location_id', 'Create a warehouse first: transfers are sent from Main Warehouse.');
+        }
+        if ((int) $d['from_location_id'] !== $main->id) {
+            $this->fail('from_location_id', "Transfers can only be sent from {$main->name}.");
+        }
         if ((int) $d['from_location_id'] === (int) $d['to_location_id']) {
             $this->fail('to_location_id', 'Choose a different destination: stock cannot be sent to the place it is already in.');
         }
@@ -636,7 +648,7 @@ class ErpController extends Controller
         if ($short->isNotEmpty()) {
             $this->fail('lines', "Not enough stock at {$from->name} for ".$short->implode(', ').'. Lower these quantities, or receive more stock first.');
         }
-        $t = $this->transfers->create($from, Location::findOrFail($d['to_location_id']), $d['lines'], $d['remarks'] ?? null);
+        $t = $this->transfers->create($from, Location::findOrFail($d['to_location_id']), $d['lines'], $d['remarks'] ?? null, $d['discounts'] ?? []);
 
         // Admins approve their own transfers anyway; "approve now" saves a second click.
         if ($r->boolean('approve_now') && $r->user()->hasRole('admin')) {
@@ -648,6 +660,14 @@ class ErpController extends Controller
 
         return $this->done("Transfer {$t->number} saved as a draft. Nothing has moved yet; an admin must approve it, then it can be dispatched.",
             $r->user()->hasRole('admin') ? [['Approve it', route('erp.transfers', ['status' => 'draft'])]] : []);
+    }
+
+    /** Printable transfer invoice: lines with rate, discount, GST and totals. Same visibility as the transfers list. */
+    public function transferInvoice(Transfer $transfer)
+    {
+        abort_unless($this->scopedTransfers()->whereKey($transfer->id)->exists(), 403);
+
+        return view('erp.transfer-invoice', ['t' => $transfer->load('from', 'to.distributor', 'lines.product')]);
     }
 
     public function transferAction(Request $r, Transfer $transfer, string $action)

@@ -67,6 +67,63 @@ class TransferFormAndWarehouseTest extends TestCase
         $this->assertSame(1, Transfer::count());
     }
 
+    public function test_from_is_always_main_warehouse(): void
+    {
+        $this->actingAs($this->admin());
+        $other = Location::create(['name' => 'Pune Depot', 'type' => 'warehouse']);
+        $main = Location::create(['name' => 'Main Warehouse', 'type' => 'warehouse']);
+        $d = Distributor::create(['business_name' => 'Alpha']);
+        $dl = Location::create(['name' => 'Alpha', 'type' => 'distributor', 'distributor_id' => $d->id]);
+        $p = Product::create(['name' => 'Syrup', 'sku' => 'S1', 'selling_price' => 10]);
+        app(StockService::class)->move($p->id, Location::system('external'), $other, 50, 'opening', 'o1');
+
+        $this->assertSame($main->id, Location::mainWarehouse()->id, 'named Main Warehouse wins over an older warehouse');
+        $html = $this->get(route('erp.transfers'))->assertOk()->getContent();
+        preg_match('/<select id="nt-from".*?<\/select>/s', $html, $m);
+        $this->assertStringContainsString('Main Warehouse', $m[0]);
+        $this->assertStringNotContainsString('Pune Depot', $m[0]);
+        $this->assertSame(1, substr_count($m[0], '<option'));
+
+        $this->post(route('erp.transfers.store'), ['from_location_id' => $other->id, 'to_location_id' => $dl->id, 'lines' => [$p->id => 5]])
+            ->assertSessionHasErrors(['from_location_id' => 'Transfers can only be sent from Main Warehouse.']);
+        $this->post(route('erp.transfers.store'), ['from_location_id' => $main->id, 'to_location_id' => $main->id, 'lines' => [$p->id => 5]])
+            ->assertSessionHasErrors('to_location_id');
+        $this->assertSame(0, Transfer::count());
+    }
+
+    public function test_line_discount_flows_into_totals_and_invoice(): void
+    {
+        $this->actingAs($this->admin());
+        $wh = Location::create(['name' => 'Main Warehouse', 'type' => 'warehouse']);
+        $d = Distributor::create(['business_name' => 'Alpha', 'address' => '12 Market Rd']);
+        $dl = Location::create(['name' => 'Alpha', 'type' => 'distributor', 'distributor_id' => $d->id]);
+        $a = Product::create(['name' => 'Syrup', 'sku' => 'S1', 'selling_price' => 100, 'tax_rate' => 12]);
+        $b = Product::create(['name' => 'Tablet', 'sku' => 'T1', 'selling_price' => 25.50, 'tax_rate' => 0]);
+        $stock = app(StockService::class);
+        $stock->move($a->id, Location::system('external'), $wh, 100, 'opening', 'o1');
+        $stock->move($b->id, Location::system('external'), $wh, 100, 'opening', 'o2');
+
+        $this->post(route('erp.transfers.store'), ['from_location_id' => $wh->id, 'to_location_id' => $dl->id, 'lines' => [$a->id => 10, $b->id => 4], 'discounts' => [$a->id => 150]])
+            ->assertSessionHasErrors(['discounts.'.$a->id => 'Discount cannot be more than 100%.']);
+
+        $this->post(route('erp.transfers.store'), ['from_location_id' => $wh->id, 'to_location_id' => $dl->id, 'lines' => [$a->id => 10, $b->id => 4], 'discounts' => [$a->id => 10, $b->id => '']])
+            ->assertSessionHasNoErrors();
+        $t = Transfer::with('lines')->sole();
+        // Syrup: 1000 gross − 100 disc = 900 + 12% GST 108 = 1008. Tablet: 102, no discount, no GST.
+        $this->assertSame(['gross' => 1102.0, 'discount' => 100.0, 'taxable' => 1002.0, 'tax' => 108.0, 'total' => 1110.0], $t->totals());
+
+        $a->update(['selling_price' => 999]);
+        $this->assertSame(1110.0, $t->fresh('lines')->totals()['total'], 'price is snapshotted on the line');
+
+        $this->get(route('erp.transfers.invoice', $t))->assertOk()
+            ->assertSee($t->invoiceNumber())->assertSee('12 Market Rd')
+            ->assertSee('₹1,110.00', false)->assertSee('− ₹100.00', false)->assertSee('10%');
+
+        $other = Distributor::create(['business_name' => 'Beta']);
+        $viewer = User::create(['name' => 'B', 'email' => 'b@x.test', 'password' => 'secret-password', 'role' => 'distributor', 'distributor_id' => $other->id]);
+        $this->actingAs($viewer)->get(route('erp.transfers.invoice', $t))->assertForbidden();
+    }
+
     public function test_admin_deletes_an_unused_warehouse_and_archives_one_with_history(): void
     {
         $this->actingAs($this->admin());

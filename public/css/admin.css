@@ -274,6 +274,12 @@ a.stat:hover { text-decoration: none; color: var(--text); border-color: var(--bo
 .qty-item .info .meter { display: block; height: 4px; margin-top: .3rem; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .qty-item .info .meter i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--ok-dot); transition: width .2s; }
 .qty-item .info .meter.warn i { background: var(--warn-dot); } .qty-item .info .meter.bad i { background: var(--bad-dot); }
+.qty-item .qty-inputs { display: flex; flex-direction: column; gap: .3rem; flex-shrink: 0; }
+.qty-item .qty-inputs .disc { position: relative; display: block; }
+.qty-item .qty-inputs .disc input { padding-right: 1.3rem; }
+.qty-item .qty-inputs .disc i { position: absolute; right: .45rem; top: 50%; transform: translateY(-50%); font-style: normal; font-size: .72rem; color: var(--muted); pointer-events: none; }
+.qty-item .info .rate { display: block; }
+.qty-item .info .amt { display: block; color: var(--text); font-weight: 600; } .qty-item .info .amt:empty { display: none; }
 .qty-item .info .line-total { display: block; color: var(--text-2); font-weight: 600; } .qty-item .info .line-total:empty { display: none; }
 .qty-none { grid-column: 1 / -1; padding: 1.5rem; text-align: center; color: var(--muted); font-size: .82rem; }
 .qty-filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .5rem; }
